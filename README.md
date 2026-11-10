@@ -50,7 +50,7 @@ powershell -ExecutionPolicy Bypass -File .\setup.ps1 -SkipWhisper
 In DSH: **Plugins → More → Custom plugin markets → Add index source** and enter:
 
 ```text
-https://nikimagic.github.io/dsh-local-stt/index.json
+https://raw.githubusercontent.com/nikimagic/dsh-local-stt/main/docs/index.json
 ```
 
 Install **GigaAM v3 Local** and/or **Whisper Local**. Restart DeepSeek Harness
