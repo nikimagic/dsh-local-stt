@@ -87,8 +87,11 @@ GigaAM RNNT понимает только русский. Для английс�
 Рекомендуется путь через магазин. Для ручной установки:
 
 ```powershell
-dsh plugin --profile desktop add nikimagic/dsh-local-stt
+dsh plugin --profile web add nikimagic/dsh-local-stt
 ```
+
+Для desktop-профиля, который управляется приложением, используйте установку
+через маркет или pnpm: CLI не даёт менять `desktop` напрямую.
 
 Либо добавьте корневой пакет в профиль через pnpm, пропишите
 `dsh-local-stt` в `dsh.profile.bundles` файла
