@@ -4,6 +4,31 @@
   "description": "Локальные провайдеры GigaAM v3 и whisper.cpp для штатного голосового ввода DeepSeek Harness.",
   "plugins": [
     {
+      "name": "dsh-local-stt",
+      "title": "GigaAM + Whisper — локально",
+      "description": "Оба локальных провайдера одним плагином: GigaAM v3 RNNT для русского и whisper.cpp для английского и смешанной речи.",
+      "icon": "icons/local-stt.svg",
+      "author": "NikiMagic",
+      "homepage": "https://github.com/nikimagic/dsh-local-stt#readme",
+      "repository": {
+        "url": "https://github.com/nikimagic/dsh-local-stt"
+      },
+      "versions": [
+        {
+          "version": "0.2.0",
+          "publishTimestamp": 1794327268,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/nikimagic/dsh-local-stt",
+            "commit": "e8c82022a82b962c188996181386c55797ce0cd9"
+          },
+          "engines": {
+            "dsh": "^0.2.0-rc.1"
+          }
+        }
+      ]
+    },
+    {
       "name": "dsh-local-gigaam",
       "title": "GigaAM v3 — локально",
       "description": "Быстрое локальное распознавание русского: голова GigaAM v3 RNNT, пунктуация и цифры. Добавляет провайдера в штатный переключатель голосового ввода.",
