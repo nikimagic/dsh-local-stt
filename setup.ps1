@@ -1,28 +1,28 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
-  Download the local GigaAM v3 and whisper.cpp runtimes used by dsh-local-stt.
+  Скачивает локальные движки GigaAM v3 и whisper.cpp для dsh-local-stt.
 
 .DESCRIPTION
-  Places everything under $env:USERPROFILE\.dsh by default, which is where the
-  DSH providers look when no explicit paths are configured:
+  По умолчанию всё раскладывается в $env:USERPROFILE\.dsh — именно там
+  провайдеры DSH ищут файлы, если пути не заданы явно:
 
     .dsh\bin\gigastt\gigastt.exe
     .dsh\models\gigaam\...
     .dsh\bin\whisper\whisper-server.exe
     .dsh\models\ggml-large-v3-turbo-q5_0.bin
 
-  No audio leaves the machine at runtime; this script only downloads the
-  engines and models once.
+  Во время распознавания аудио не покидает машину; скрипт только один раз
+  скачивает движки и модели.
 
 .PARAMETER DshHome
-  DSH home directory. Defaults to %USERPROFILE%\.dsh.
+  Каталог DSH. По умолчанию %USERPROFILE%\.dsh.
 
 .PARAMETER SkipGigaam
-  Do not install the GigaAM runtime/model.
+  Не устанавливать движок и модель GigaAM.
 
 .PARAMETER SkipWhisper
-  Do not install the whisper.cpp runtime/model.
+  Не устанавливать движок и модель whisper.cpp.
 #>
 [CmdletBinding()]
 param(
@@ -46,20 +46,20 @@ function Write-Step([string]$Message) {
 function Get-RemoteFile([string]$Url, [string]$OutFile) {
     $parent = Split-Path -Parent $OutFile
     if ($parent) { New-Item -ItemType Directory -Force -Path $parent | Out-Null }
-    Write-Host "Downloading $Url"
+    Write-Host "Скачивание $Url"
     try {
         Invoke-WebRequest -Uri $Url -OutFile $OutFile -UseBasicParsing -MaximumRedirection 10
     } catch {
-        if (-not (Get-Command curl.exe -ErrorAction SilentlyContinue)) { throw }
+        if (-not (Get-Command curl.exe -ErrorAction SilentlyContinue)) { throw 'curl.exe не найден для запасной загрузки' }
         & curl.exe -L --fail --silent --show-error $Url -o $OutFile
-        if ($LASTEXITCODE -ne 0) { throw "Download failed: $Url" }
+        if ($LASTEXITCODE -ne 0) { throw "Не удалось скачать: $Url" }
     }
 }
 
 function Assert-Sha256([string]$Path, [string]$Expected) {
     $actual = (Get-FileHash -Path $Path -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($actual -ne $Expected.ToLowerInvariant()) {
-        throw "SHA-256 mismatch for $Path`n  expected: $Expected`n  actual:   $actual"
+        throw "Несовпадение SHA-256 для $Path`n  ожидалось: $Expected`n  получено:  $actual"
     }
 }
 
@@ -69,12 +69,12 @@ function Install-Archive([string]$Archive, [string]$Destination, [string]$Kind) 
         Expand-Archive -Path $Archive -DestinationPath $Destination -Force
     } else {
         & tar.exe -xzf $Archive -C $Destination
-        if ($LASTEXITCODE -ne 0) { throw "tar failed for $Archive" }
+        if ($LASTEXITCODE -ne 0) { throw "Ошибка tar при распаковке $Archive" }
     }
 }
 
 $DshHome = [IO.Path]::GetFullPath($DshHome)
-Write-Host "DSH home: $DshHome"
+Write-Host "Каталог DSH: $DshHome"
 New-Item -ItemType Directory -Force -Path $DshHome | Out-Null
 
 $temp = Join-Path ([IO.Path]::GetTempPath()) ('dsh-local-stt-' + [Guid]::NewGuid().ToString('N'))
@@ -92,15 +92,15 @@ try {
         Get-RemoteFile $gigaUrl $gigaArchive
         Assert-Sha256 $gigaArchive $gigaSha
         Install-Archive $gigaArchive $gigaDir 'tar.gz'
-        if (-not (Test-Path $gigaExe)) { throw "gigastt.exe was not extracted to $gigaDir" }
+        if (-not (Test-Path $gigaExe)) { throw "gigastt.exe не распакован в $gigaDir" }
 
         $gigaModels = Join-Path $DshHome 'models\gigaam'
         New-Item -ItemType Directory -Force -Path $gigaModels | Out-Null
-        Write-Step 'GigaAM model (INT8, RNNT)'
+        Write-Step 'Модель GigaAM (INT8, RNNT)'
         & $gigaExe download --model-dir $gigaModels --model-variant rnnt --skip-diarization
-        if ($LASTEXITCODE -ne 0) { throw "gigastt download failed with exit code $LASTEXITCODE" }
+        if ($LASTEXITCODE -ne 0) { throw "gigastt download завершился с кодом $LASTEXITCODE" }
 
-        Write-Step 'GigaAM punctuation model (RuPunct)'
+        Write-Step 'Модель пунктуации GigaAM (RuPunct)'
         $punctDir = Join-Path $gigaModels 'punct'
         New-Item -ItemType Directory -Force -Path $punctDir | Out-Null
         $punctFiles = @(
@@ -127,18 +127,18 @@ try {
         $whisperTemp = Join-Path $temp 'whisper'
         Install-Archive $whisperArchive $whisperTemp 'zip'
         $release = Join-Path $whisperTemp 'Release'
-        if (-not (Test-Path $release)) { throw "Release directory not found in $whisperArchive" }
+        if (-not (Test-Path $release)) { throw "Каталог Release не найден в $whisperArchive" }
         New-Item -ItemType Directory -Force -Path $whisperDir | Out-Null
         Copy-Item -Path (Join-Path $release '*') -Destination $whisperDir -Recurse -Force
 
-        Write-Step 'Whisper large-v3-turbo q5_0 model'
+        Write-Step 'Модель Whisper large-v3-turbo q5_0'
         $whisperModel = Join-Path $DshHome 'models\ggml-large-v3-turbo-q5_0.bin'
         Get-RemoteFile 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin' $whisperModel
         Assert-Sha256 $whisperModel '394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2'
     }
 
-    Write-Host "`nDone." -ForegroundColor Green
-    Write-Host "Restart DeepSeek Harness, then enable the providers in Plugins -> Voice Input."
+    Write-Host "`nГотово." -ForegroundColor Green
+    Write-Host 'Перезапустите DeepSeek Harness и включите провайдеров в «Плагины → Голосовой ввод».'
 } finally {
     Remove-Item -Recurse -Force $temp -ErrorAction SilentlyContinue
 }

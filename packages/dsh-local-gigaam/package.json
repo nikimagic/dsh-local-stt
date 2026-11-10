@@ -1,7 +1,7 @@
 {
   "name": "dsh-local-gigaam",
-  "version": "0.1.0",
-  "description": "Local GigaAM v3 recognizer for the official DSH Voice Input provider switcher",
+  "version": "0.1.1",
+  "description": "Локальный распознаватель GigaAM v3 для штатного переключателя голосового ввода DSH",
   "license": "MIT",
   "author": "NikiMagic",
   "homepage": "https://github.com/nikimagic/dsh-local-stt#readme",

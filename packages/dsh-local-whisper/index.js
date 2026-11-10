@@ -44,7 +44,7 @@ const LANGUAGES = [
 
 const DEFAULTS = {
   providerId: 'local-whisper',
-  providerName: 'Whisper large-v3-turbo q5_0 (local)',
+  providerName: 'Whisper large-v3-turbo q5_0 (локально)',
   whisperBin: join(DSH_HOME, 'bin', 'whisper', 'whisper-server.exe'),
   whisperModel: join(DSH_HOME, 'models', 'ggml-large-v3-turbo-q5_0.bin'),
   host: '127.0.0.1',

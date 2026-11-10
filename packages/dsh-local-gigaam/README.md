@@ -1,31 +1,34 @@
 # dsh-local-gigaam
 
-Community provider for the **stock** `@deepseek-ai/dsh-experimental-voice-input-bundle`.
-It registers `gigaam-local` with the official `speechToText` service, so the
-existing Voice Input provider dropdown gains a GigaAM option next to
-SenseVoice and Whisper.
+Локальный провайдер GigaAM v3 для **штатного** голосового ввода DeepSeek Harness.
+Он не заменяет официальный микрофон и настройки, а добавляет распознаватель
+`gigaam-local` в тот же сервис `ctx.speechToText`. В карточке «Голосовой ввод»
+появляется выбор между GigaAM, Whisper и SenseVoice.
 
-## What it does
+## Что делает
 
-- Accepts the canonical 16 kHz mono PCM16 WAV that the official UI already
-  records and validates.
-- Starts and stops `gigastt serve` on `127.0.0.1:9876`.
-- Posts the WAV to `/v1/transcribe` and returns the official result shape
+- Принимает канонический WAV 16 кГц, моно, PCM16, который уже записывает
+  официальный интерфейс.
+- Запускает и останавливает `gigastt serve` на `127.0.0.1:9876`.
+- Отправляет WAV в `/v1/transcribe` и возвращает результат в формате
   `{ text, audioSeconds, inferenceSeconds }`.
-- Uses the `rnnt` head with RuPunct punctuation/casing and Russian ITN:
-  the lowest-WER GigaAM v3 head for Russian.
-- Keeps the model loaded between phrases.
-- Never sends audio to a remote service.
+- Использует голову `rnnt` с пунктуацией RuPunct и русским ITN — лучший WER
+  GigaAM v3 на русском.
+- Держит модель загруженной между фразами.
+- Не отправляет аудио во внешние сервисы.
 
-## Files it expects
+## Какие файлы нужны
 
 ```text
-C:\Users\admin\.dsh\bin\gigastt\gigastt.exe
-C:\Users\admin\.dsh\models\gigaam\                 (v3_rnnt_*.onnx + v3_vocab.txt)
-C:\Users\admin\.dsh\models\gigaam\punct\           (rupunct_small_int8.onnx + tokenizer/config)
+C:\Users\<пользователь>\.dsh\bin\gigastt\gigastt.exe
+C:\Users\<пользователь>\.dsh\models\gigaam\              (v3_rnnt_*.onnx + v3_vocab.txt)
+C:\Users\<пользователь>\.dsh\models\gigaam\punct\        (rupunct_small_int8.onnx + tokenizer/config)
 ```
 
-## Profile override
+Если пути стандартные, настраивать ничего не нужно: провайдер ищет их сам.
+Скачать всё можно скриптом `setup.ps1` из корня репозитория.
+
+## Настройка в профиле
 
 `~/.dsh/profiles/desktop/cordis.patch.yml`:
 
@@ -36,9 +39,9 @@ C:\Users\admin\.dsh\models\gigaam\punct\           (rupunct_small_int8.onnx + to
     language: ru
 - id: speech-to-text-gigaam
   config:
-    gigasttBin: C:/Users/admin/.dsh/bin/gigastt/gigastt.exe
-    modelDir: C:/Users/admin/.dsh/models/gigaam
-    punctModelDir: C:/Users/admin/.dsh/models/gigaam/punct
+    gigasttBin: C:/Users/<пользователь>/.dsh/bin/gigastt/gigastt.exe
+    modelDir: C:/Users/<пользователь>/.dsh/models/gigaam
+    punctModelDir: C:/Users/<пользователь>/.dsh/models/gigaam/punct
     modelVariant: rnnt
     punctuation: "on"
     itn: "on"
@@ -46,22 +49,23 @@ C:\Users\admin\.dsh\models\gigaam\punct\           (rupunct_small_int8.onnx + to
     autoStart: true
 ```
 
-The provider dropdown still lists all recognizers. GigaAM's `rnnt` head is
-Russian-only; for English or mixed Russian/English switch to Whisper, or
-install/configure `ml_ctc_large` (600M, ru/en/kk/ky/uz) as a separate variant.
+В выпадающем списке провайдеров по-прежнему видны все распознаватели.
+GigaAM `rnnt` понимает только русский. Для английского или смешанной речи
+переключитесь на Whisper либо настройте вариант `ml_ctc_large`
+(600M, ru/en/kk/ky/uz) как отдельный экземпляр.
 
-## Measured on this machine
+## Замер на этой машине
 
-`golos_00.wav`, 4.0 s Russian: **~250 ms**, transcript
-`60000 тенге, сколько будет стоить?` — with punctuation and digits restored.
-`gigastt` is substantially faster than CPU Whisper here because it is a
-non-autoregressive transducer and does not allocate a 30-second window.
+Файл `golos_00.wav`, 4,0 с русской речи: **~0,25 с**, текст
+`60000 тенге, сколько будет стоить?` — с пунктуацией и цифрами.
+`gigastt` быстрее CPU-Whisper, потому что это неавторегрессионный transducer:
+он не считает фиксированное 30-секундное окно.
 
-## Notes
+## Примечания
 
-- The server's `/health` answers while the model is loading; this provider waits
-  on `/ready`, not on process liveness.
-- `gigastt` downloads missing punctuation/ITN side models on first start. They
-  are pre-seeded in this installation.
-- `punctModelDir` is optional; when unset GigaAM uses its default
+- `/health` отвечает уже во время загрузки модели; провайдер ждёт `/ready`,
+  а не просто запуска процесса.
+- Модель пунктуации при отсутствии может докачаться при первом старте. В этой
+  установке она уже лежит локально.
+- `punctModelDir` необязателен; без него GigaAM использует
   `~/.gigastt/models/punct`.

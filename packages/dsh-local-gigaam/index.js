@@ -25,22 +25,22 @@ export const inject = ['speechToText']
 const VARIANTS = {
   rnnt: {
     model: 'gigaam-v3-rnnt',
-    name: 'GigaAM v3 RNNT (local)',
+    name: 'GigaAM v3 RNNT (локально)',
     languages: ['ru'],
   },
   e2e_rnnt: {
     model: 'gigaam-v3-e2e-rnnt',
-    name: 'GigaAM v3 E2E RNNT (local)',
+    name: 'GigaAM v3 E2E RNNT (локально)',
     languages: ['ru'],
   },
   ml_ctc: {
     model: 'gigaam-multilingual-ctc',
-    name: 'GigaAM Multilingual CTC (local)',
+    name: 'GigaAM Multilingual CTC (локально)',
     languages: ['auto', 'ru', 'en', 'kk', 'ky', 'uz'],
   },
   ml_ctc_large: {
     model: 'gigaam-multilingual-large-ctc',
-    name: 'GigaAM Multilingual Large (local)',
+    name: 'GigaAM Multilingual Large (локально)',
     languages: ['auto', 'ru', 'en', 'kk', 'ky', 'uz'],
   },
 }

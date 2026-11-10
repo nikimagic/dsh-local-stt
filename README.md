@@ -1,35 +1,37 @@
 # dsh-local-stt
 
-Local speech recognition for **DeepSeek Harness** on Windows. Two providers plug
-into the official Voice Input bundle and appear in its provider switcher:
+Локальное распознавание речи для **DeepSeek Harness** на Windows. Два провайдера
+подключаются к официальному голосовому вводу и появляются в его штатном
+переключателе:
 
-| Provider | Languages | Engine | Speed on a 4 s phrase |
+| Провайдер | Языки | Движок | Скорость на 4 с |
 |---|---|---|---:|
-| **GigaAM v3 RNNT** | Russian | [gigastt](https://github.com/ekhodzitsky/gigastt) | ~0.25 s |
-| **Whisper large-v3-turbo** | Russian, English, auto, … | [whisper.cpp](https://github.com/ggml-org/whisper.cpp) | ~9 s (CPU) |
+| **GigaAM v3 RNNT** | русский | [gigastt](https://github.com/ekhodzitsky/gigastt) | ~0,25 с |
+| **Whisper large-v3-turbo** | русский, английский, авто и др. | [whisper.cpp](https://github.com/ggml-org/whisper.cpp) | ~9 с (CPU) |
 
-The stock `@deepseek-ai/dsh-experimental-voice-input-bundle` remains in charge of
-the microphone, WAV capture and settings. These packages only register additional
-recognizers through `ctx.speechToText`. One microphone, one provider dropdown.
+Официальный `@deepseek-ai/dsh-experimental-voice-input-bundle` остаётся
+хозяином микрофона, записи WAV и настроек. Эти пакеты только добавляют
+распознаватели через `ctx.speechToText`. Микрофон один, переключатель один.
 
-## Requirements
+## Требования
 
 - Windows 10/11 x64.
-- DeepSeek Harness `0.2.x` (tested on `0.2.2-rc.1`).
-- About 1 GB free disk for both engines and models.
-- Internet only for setup; recognition is local and sends no audio anywhere.
+- DeepSeek Harness `0.2.x` (проверено на `0.2.2-rc.1`).
+- Около 1 ГБ свободного места для движков и моделей.
+- Интернет только для установки; само распознавание локальное и никуда аудио
+  не отправляет.
 
-## Install
+## Установка
 
-### 1. Download the engines and models
+### 1. Скачать движки и модели
 
-From a normal PowerShell window:
+В обычном PowerShell:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\setup.ps1
 ```
 
-The script verifies SHA-256 and installs into:
+Скрипт проверяет SHA-256 и раскладывает всё в:
 
 ```text
 %USERPROFILE%\.dsh\bin\gigastt\gigastt.exe
@@ -39,72 +41,76 @@ The script verifies SHA-256 and installs into:
 %USERPROFILE%\.dsh\models\ggml-large-v3-turbo-q5_0.bin
 ```
 
-Use `-SkipWhisper` or `-SkipGigaam` to install only one engine:
+Только один движок:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\setup.ps1 -SkipWhisper
+powershell -ExecutionPolicy Bypass -File .\setup.ps1 -SkipGigaam
 ```
 
-### 2. Add the plugin market
+### 2. Добавить индекс плагинов
 
-In DSH: **Plugins → More → Custom plugin markets → Add index source** and enter:
+В DSH: **Плагины → Ещё → Пользовательские магазины плагинов → Добавить
+источник индекса** и вставить:
 
 ```text
 https://raw.githubusercontent.com/nikimagic/dsh-local-stt/main/docs/index.json
 ```
 
-Install **GigaAM v3 Local** and/or **Whisper Local**. Restart DeepSeek Harness
-after installation.
+Установить **GigaAM v3 — локально** и/или **Whisper — локально**.
+После установки перезапустить DeepSeek Harness.
 
-### 3. Choose a provider
+### 3. Выбрать провайдера
 
-**Plugins → Voice Input → Provider**:
+**Плагины → Голосовой ввод → Провайдер**:
 
-- `GigaAM v3 RNNT (local)` — Russian, fastest, best Russian accuracy;
-- `Whisper large-v3-turbo q5_0 (local)` — English and mixed speech;
-- `SenseVoiceSmall (INT8)` — the stock provider, no Russian.
+- `GigaAM v3 RNNT (локально)` — русский, быстро, лучшая точность на русском;
+- `Whisper large-v3-turbo q5_0 (локально)` — английский и смешанная речь;
+- `SenseVoiceSmall (INT8)` — штатный провайдер, русского не знает.
 
-GigaAM RNNT is Russian-only. For English or mixed Russian/English, switch to
-Whisper. If switching from Whisper with `en` to GigaAM, select `ru` first.
+GigaAM RNNT понимает только русский. Для английского или смешанной речи
+переключитесь на Whisper. Если переключаетесь с Whisper (`en`) на GigaAM,
+сначала выберите `ru`.
 
-## Manual install (without the market)
+## Установка вручную (без магазина)
 
-The market path above is recommended. For a manual setup, install each package
-from this repository into the profile with pnpm, add `dsh-local-gigaam` and
-`dsh-local-whisper` to `dsh.profile.bundles` in
-`~/.dsh/profiles/desktop/package.json`, then restart DSH. The provider defaults
-point at the paths created by `setup.ps1`, so no YAML editing is required for a
-standard `%USERPROFILE%\.dsh` installation.
+Рекомендуется путь через магазин. Для ручной установки добавьте пакеты из
+репозитория в профиль через pnpm, пропишите `dsh-local-gigaam` и
+`dsh-local-whisper` в `dsh.profile.bundles` файла
+`~/.dsh/profiles/desktop/package.json` и перезапустите DSH. Пути по умолчанию
+уже указывают на каталоги, которые создаёт `setup.ps1`, поэтому YAML править
+не нужно.
 
-## How it works
+## Как это работает
 
-- `gigastt serve` is started on `127.0.0.1:9876`; the official API hands it a
-  canonical 16 kHz mono PCM16 WAV and gets back `{ text, audioSeconds,
-  inferenceSeconds }`.
-- `whisper-server` is started on `127.0.0.1:8001` with the same result contract.
-- Both servers bind loopback only. Audio never leaves the machine.
-- `setup.ps1` pre-seeds every model, so recognition makes no network requests.
+- `gigastt serve` слушает `127.0.0.1:9876`; официальный API отдаёт ему
+  канонический WAV 16 кГц, моно, PCM16 и получает
+  `{ text, audioSeconds, inferenceSeconds }`.
+- `whisper-server` слушает `127.0.0.1:8001` с тем же форматом результата.
+- Оба сервера слушают только loopback. Аудио не покидает машину.
+- `setup.ps1` заранее скачивает все модели, поэтому при распознавании сеть не
+  используется.
 
-## Repository layout
+## Структура репозитория
 
 ```text
-packages/dsh-local-gigaam/    GigaAM provider bundle
-packages/dsh-local-whisper/   whisper.cpp provider bundle
-docs/index.json               plugin-market index for Discover
-docs/icons/                   market icons
-setup.ps1                     engine/model downloader with checksums
+packages/dsh-local-gigaam/    провайдер GigaAM
+packages/dsh-local-whisper/   провайдер whisper.cpp
+docs/index.json               индекс для Discover
+docs/icons/                   иконки магазина
+setup.ps1                     загрузчик движков и моделей с проверкой SHA-256
 ```
 
-## Licenses
+## Лицензии
 
-Our code is MIT. The downloaded components keep their own licenses:
+Наш код — MIT. Скачиваемые компоненты сохраняют свои лицензии:
 
 - [gigastt](https://github.com/ekhodzitsky/gigastt) — MIT;
 - [GigaAM](https://github.com/salute-developers/GigaAM) — MIT;
 - [whisper.cpp](https://github.com/ggml-org/whisper.cpp) — MIT;
-- Whisper model weights — MIT (OpenAI);
-- [RuPunct ONNX](https://huggingface.co/ekhodzitsky/rupunct-small-onnx) — see
-  its model card.
+- веса Whisper — MIT (OpenAI);
+- [RuPunct ONNX](https://huggingface.co/ekhodzitsky/rupunct-small-onnx) —
+  см. карточку модели.
 
-Model binaries are not stored in this repository; `setup.ps1` downloads them
-from their upstream releases.
+Модели в репозитории не хранятся; `setup.ps1` скачивает их из официальных
+релизов.
