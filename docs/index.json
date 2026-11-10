@@ -1,24 +1,12 @@
 {
   "format": 1,
-  "title": {
-    "en": "NikiMagic local STT",
-    "ru": "NikiMagic — локальное распознавание"
-  },
-  "description": {
-    "en": "Local GigaAM v3 and whisper.cpp providers for the official DSH Voice Input bundle.",
-    "ru": "Локальные провайдеры GigaAM v3 и whisper.cpp для официального голосового ввода DSH."
-  },
+  "title": "NikiMagic — локальное распознавание",
+  "description": "Локальные провайдеры GigaAM v3 и whisper.cpp для штатного голосового ввода DeepSeek Harness.",
   "plugins": [
     {
       "name": "dsh-local-gigaam",
-      "title": {
-        "en": "GigaAM v3 Local",
-        "ru": "GigaAM v3 — локально"
-      },
-      "description": {
-        "en": "Fast local Russian recognition with the GigaAM v3 RNNT head, punctuation and ITN. Adds a provider to the stock Voice Input switcher.",
-        "ru": "Быстрое локальное распознавание русского: голова GigaAM v3 RNNT, пунктуация и цифры. Добавляет провайдера в штатный переключатель голосового ввода."
-      },
+      "title": "GigaAM v3 — локально",
+      "description": "Быстрое локальное распознавание русского: голова GigaAM v3 RNNT, пунктуация и цифры. Добавляет провайдера в штатный переключатель голосового ввода.",
       "icon": "icons/gigaam.svg",
       "author": "NikiMagic",
       "homepage": "https://github.com/nikimagic/dsh-local-stt#readme",
@@ -28,12 +16,12 @@
       },
       "versions": [
         {
-          "version": "0.1.0",
-          "publishTimestamp": 1794323596,
+          "version": "0.1.1",
+          "publishTimestamp": 1794326713,
           "source": {
             "type": "git",
             "url": "https://github.com/nikimagic/dsh-local-stt",
-            "commit": "29d2712b2703435e485f94d5dd46090057de4178",
+            "commit": "1bf4fdad9a94d777c23da74b91d6fa834ed15f24",
             "path": "packages/dsh-local-gigaam"
           },
           "engines": {
@@ -44,14 +32,8 @@
     },
     {
       "name": "dsh-local-whisper",
-      "title": {
-        "en": "Whisper Local",
-        "ru": "Whisper — локально"
-      },
-      "description": {
-        "en": "Local whisper.cpp provider for Russian, English and mixed speech. Adds a second recognizer to the stock Voice Input switcher.",
-        "ru": "Локальный whisper.cpp для русского, английского и смешанной речи. Добавляет второй распознаватель в штатный переключатель голосового ввода."
-      },
+      "title": "Whisper — локально",
+      "description": "Локальный whisper.cpp для русского, английского и смешанной речи. Добавляет второй распознаватель в штатный переключатель голосового ввода.",
       "icon": "icons/whisper.svg",
       "author": "NikiMagic",
       "homepage": "https://github.com/nikimagic/dsh-local-stt#readme",
@@ -61,12 +43,12 @@
       },
       "versions": [
         {
-          "version": "0.1.0",
-          "publishTimestamp": 1794323596,
+          "version": "0.1.1",
+          "publishTimestamp": 1794326713,
           "source": {
             "type": "git",
             "url": "https://github.com/nikimagic/dsh-local-stt",
-            "commit": "29d2712b2703435e485f94d5dd46090057de4178",
+            "commit": "1bf4fdad9a94d777c23da74b91d6fa834ed15f24",
             "path": "packages/dsh-local-whisper"
           },
           "engines": {
