@@ -1,0 +1,9 @@
+# Корневой бандл dsh-local-stt.
+#
+# Одна запись в списке плагинов, внутри — GigaAM v3 и whisper.cpp.
+# Пути по умолчанию указывают на %USERPROFILE%\.dsh; setup.ps1 кладёт
+# движки и модели именно туда.
+- insert:
+    - id: speech-to-text-local
+      name: dsh-local-stt
+      config: {}

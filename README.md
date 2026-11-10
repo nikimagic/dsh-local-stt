@@ -10,8 +10,12 @@
 | **Whisper large-v3-turbo** | русский, английский, авто и др. | [whisper.cpp](https://github.com/ggml-org/whisper.cpp) | ~9 с (CPU) |
 
 Официальный `@deepseek-ai/dsh-experimental-voice-input-bundle` остаётся
-хозяином микрофона, записи WAV и настроек. Эти пакеты только добавляют
+хозяином микрофона, записи WAV и настроек. Наши пакеты только добавляют
 распознаватели через `ctx.speechToText`. Микрофон один, переключатель один.
+
+Можно поставить **один общий плагин** `dsh-local-stt` — внутри сразу GigaAM и
+Whisper, одна строка в списке плагинов. Либо поставить их отдельными пакетами
+`dsh-local-gigaam` и `dsh-local-whisper`, если нужен только один движок.
 
 ## Требования
 
@@ -61,8 +65,10 @@ powershell -ExecutionPolicy Bypass -File .\setup.ps1 -SkipGigaam
 https://raw.githubusercontent.com/nikimagic/dsh-local-stt/main/docs/index.json
 ```
 
-Установить **GigaAM v3 — локально** и/или **Whisper — локально**.
-После установки перезапустить DeepSeek Harness.
+Установить **«GigaAM + Whisper — локально»** — это один плагин с обоими
+провайдерами. Если нужен только один движок, установите **GigaAM v3 —
+локально** или **Whisper — локально** отдельно. После установки перезапустить
+DeepSeek Harness.
 
 ### 3. Выбрать провайдера
 
@@ -78,9 +84,14 @@ GigaAM RNNT понимает только русский. Для английс�
 
 ## Установка вручную (без магазина)
 
-Рекомендуется путь через магазин. Для ручной установки добавьте пакеты из
-репозитория в профиль через pnpm, пропишите `dsh-local-gigaam` и
-`dsh-local-whisper` в `dsh.profile.bundles` файла
+Рекомендуется путь через магазин. Для ручной установки:
+
+```powershell
+dsh plugin --profile desktop add nikimagic/dsh-local-stt
+```
+
+Либо добавьте корневой пакет в профиль через pnpm, пропишите
+`dsh-local-stt` в `dsh.profile.bundles` файла
 `~/.dsh/profiles/desktop/package.json` и перезапустите DSH. Пути по умолчанию
 уже указывают на каталоги, которые создаёт `setup.ps1`, поэтому YAML править
 не нужно.
@@ -98,8 +109,10 @@ GigaAM RNNT понимает только русский. Для английс�
 ## Структура репозитория
 
 ```text
-packages/dsh-local-gigaam/    провайдер GigaAM
-packages/dsh-local-whisper/   провайдер whisper.cpp
+index.js                      корневой бандл: оба провайдера одним плагином
+cordis.patch.yml              вставка корневого бандла в профиль
+packages/dsh-local-gigaam/    провайдер GigaAM (можно ставить отдельно)
+packages/dsh-local-whisper/   провайдер whisper.cpp (можно ставить отдельно)
 docs/index.json               индекс для Discover
 docs/icons/                   иконки магазина
 setup.ps1                     загрузчик движков и моделей с проверкой SHA-256

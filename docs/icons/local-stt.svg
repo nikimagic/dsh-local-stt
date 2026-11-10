@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b3b8c"/>
+      <stop offset="0.55" stop-color="#1677ff"/>
+      <stop offset="1" stop-color="#17b3ff"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="url(#bg)"/>
+  <g fill="none" stroke="#d8f2ff" stroke-width="3" stroke-linecap="round">
+    <path d="M12 36v-8M18 41V23M24 45V19M30 39V25M36 43V21M42 45V19M48 40V24M54 36v-8"/>
+  </g>
+  <text x="32" y="58" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="12" font-weight="700" fill="#ffffff">G + W</text>
+</svg>
