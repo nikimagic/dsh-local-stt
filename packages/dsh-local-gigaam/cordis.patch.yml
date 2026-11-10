@@ -1,0 +1,8 @@
+# dsh-local-gigaam bundle layer.
+#
+# Inserted next to the stock SenseVoice provider and the local Whisper provider.
+# The profile's cordis.patch.yml supplies the absolute binary/model paths.
+- insert:
+    - id: speech-to-text-gigaam
+      name: dsh-local-gigaam
+      config: {}

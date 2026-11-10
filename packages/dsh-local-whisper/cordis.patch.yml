@@ -1,0 +1,8 @@
+# dsh-local-whisper bundle layer.
+#
+# The entry is deliberately inserted next to the stock SenseVoice provider.
+# The profile's own cordis.patch.yml supplies the absolute binary/model paths.
+- insert:
+    - id: speech-to-text-local-whisper
+      name: dsh-local-whisper
+      config: {}

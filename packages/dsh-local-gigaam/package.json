@@ -1,0 +1,40 @@
+{
+  "name": "dsh-local-gigaam",
+  "version": "0.1.0",
+  "description": "Local GigaAM v3 recognizer for the official DSH Voice Input provider switcher",
+  "license": "MIT",
+  "author": "NikiMagic",
+  "homepage": "https://github.com/nikimagic/dsh-local-stt#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nikimagic/dsh-local-stt.git",
+    "directory": "packages/dsh-local-gigaam"
+  },
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json",
+    "./cordis.patch.yml": "./cordis.patch.yml"
+  },
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "dsh": "^0.2.0-rc.1"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-experimental-speech-to-text": "^0.2.0-rc.1"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml",
+      "platforms": [
+        "win32"
+      ]
+    }
+  }
+}

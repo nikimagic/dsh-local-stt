@@ -1,0 +1,9 @@
+node_modules/
+.pnpm-store/
+.plugin-market-cache/
+*.tgz
+*.zip
+*.tar.gz
+*.bin
+.DS_Store
+Thumbs.db
