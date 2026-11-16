@@ -1,5 +1,5 @@
 /**
- * Кнопка «Проверить обновления» в панели ввода.
+ * Кнопка «Проверить обновления» внутри карточки плагина.
  *
  * Клиентская половина плагина: пересчитывает хеши движка и моделей через
  * штатный `prepare()` провайдера и показывает ход проверки.
@@ -23,115 +23,122 @@ window.__ModuleLoader__.load({
       if (phase === 'unprepared') return 'нужно скачать'
       if (phase === 'failed') return 'ошибка подготовки'
       if (phase === 'cancelled') return 'отменено'
-      if (phase === 'ready') return 'готово'
       return 'готово'
     }
 
-    function isBusy(provider) {
+    function busy(provider) {
       const phase = provider.preparation?.phase
       return phase === 'checking' || phase === 'downloading' || phase === 'loading'
     }
 
-    return {
-      inject: ['slots', 'remote'],
-      apply(ctx) {
-        function CheckUpdates() {
-          const [text, setText] = React.useState('Проверить обновления')
-          const [busy, setBusy] = React.useState(false)
-          const alive = React.useRef(true)
+    /** Компонент кнопки; `scope` уже содержит remote.speech. */
+    function createButton(scope) {
+      return function CheckUpdates() {
+        const [text, setText] = React.useState('Проверить обновления')
+        const [running, setRunning] = React.useState(false)
+        const alive = React.useRef(true)
 
-          React.useEffect(() => () => {
-            alive.current = false
-          }, [])
+        React.useEffect(() => () => {
+          alive.current = false
+        }, [])
 
-          const readCatalog = async () => {
-            const result = await ctx.remote.speech.catalog()
-            if (result && result.ok === false) throw result.error
-            return (result?.value ?? result)?.providers ?? []
-          }
+        const readCatalog = async () => {
+          const result = await scope.remote.speech.catalog()
+          if (result && result.ok === false) throw result.error
+          return (result?.value ?? result)?.providers ?? []
+        }
 
-          const wait = async () => {
-            for (let attempt = 0; attempt < 600 && alive.current; attempt++) {
-              const providers = await readCatalog()
-              const active = providers.filter(isBusy)
-              if (active.length === 0) {
-                const failed = providers.filter((provider) => provider.preparation?.phase === 'failed')
-                const missing = providers.filter((provider) => provider.preparation?.phase === 'unprepared')
-                setBusy(false)
-                setText(
-                  failed.length > 0
-                    ? 'Ошибка подготовки — смотрите голосовой ввод'
-                    : missing.length > 0
-                      ? 'Нужно скачать — откройте голосовой ввод'
-                      : 'Проверка пройдена',
-                )
-                return
-              }
-              setText(label(active[0]))
-              await new Promise((resolve) => setTimeout(resolve, 1000))
+        const wait = async () => {
+          for (let attempt = 0; attempt < 600 && alive.current; attempt++) {
+            const providers = await readCatalog()
+            const active = providers.filter(busy)
+            if (active.length === 0) {
+              const failed = providers.filter((provider) => provider.preparation?.phase === 'failed')
+              const missing = providers.filter((provider) => provider.preparation?.phase === 'unprepared')
+              setRunning(false)
+              setText(
+                failed.length > 0
+                  ? 'Ошибка подготовки — откройте голосовой ввод'
+                  : missing.length > 0
+                    ? 'Нужно скачать — откройте голосовой ввод'
+                    : 'Проверка пройдена',
+              )
+              return
             }
-            if (alive.current) {
-              setBusy(false)
-              setText('Проверка идёт в фоне')
-            }
+            setText(label(active[0]))
+            await new Promise((resolve) => setTimeout(resolve, 1000))
           }
-
-          const run = async () => {
-            setBusy(true)
-            setText('Проверка файлов')
-            try {
-              const providers = await readCatalog()
-              for (const provider of providers) {
-                const result = await ctx.remote.speech.prepare(provider.id)
-                if (result && result.ok === false) throw result.error
-              }
-              await wait()
-            } catch (error) {
-              if (!alive.current) return
-              setBusy(false)
-              setText(`Ошибка: ${error instanceof Error ? error.message : String(error)}`)
-            }
+          if (alive.current) {
+            setRunning(false)
+            setText('Проверка идёт в фоне')
           }
+        }
 
-          return h(
+        const run = async () => {
+          setRunning(true)
+          setText('Проверка файлов')
+          try {
+            const providers = await readCatalog()
+            for (const provider of providers) {
+              const result = await scope.remote.speech.prepare(provider.id)
+              if (result && result.ok === false) throw result.error
+            }
+            await wait()
+          } catch (error) {
+            if (!alive.current) return
+            setRunning(false)
+            setText(`Ошибка: ${error instanceof Error ? error.message : String(error)}`)
+          }
+        }
+
+        return h(
+          'div',
+          { style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '4px 0' } },
+          h(
             'button',
             {
               type: 'button',
-              disabled: busy,
-              title: 'Пересчитать хеши движков и моделей и докачать недостающее',
+              disabled: running,
+              title: 'Пересчитать SHA-256 движков и моделей и докачать недостающее',
               onClick: () => {
-                if (!busy) void run()
+                if (!running) void run()
               },
               style: {
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: 6,
-                padding: '4px 10px',
+                padding: '5px 12px',
                 borderRadius: 8,
                 border: '1px solid var(--dsw-alias-border-secondary, rgba(127,127,127,.35))',
                 background: 'transparent',
                 color: 'inherit',
                 font: 'inherit',
-                fontSize: 12,
-                cursor: busy ? 'default' : 'pointer',
-                opacity: busy ? 0.7 : 1,
+                cursor: running ? 'default' : 'pointer',
+                opacity: running ? 0.7 : 1,
               },
             },
-            h('span', { 'aria-hidden': true }, busy ? '⏳' : '⟳'),
+            h('span', { 'aria-hidden': true }, running ? '⏳' : '⟳'),
             h('span', null, text),
-          )
-        }
+          ),
+          h('span', { style: { opacity: 0.7, fontSize: 12 } }, 'Сверяет движок и модели по SHA-256'),
+        )
+      }
+    }
 
-        try {
-          ctx.slots.inject('conversation.composer.dock', () =>
-            ctx.slots.register(
-              { name: 'conversation.composer.dock', id: 'dsh-local-stt-check', order: 40 },
-              CheckUpdates,
-            ),
-          )
-        } catch (error) {
-          console.warn('dsh-local-stt: слот панели ввода недоступен', error)
-        }
+    return {
+      inject: ['remote', 'slots'],
+      apply(ctx) {
+        // remote.speech появляется после монтирования голосового ввода.
+        return ctx.inject(['remote.speech', 'slots'], (scope) => {
+          const Button = createButton(scope)
+          try {
+            scope.slots.inject('plugins.bundle.config', () =>
+              scope.slots.register({ name: 'plugins.bundle.config', key: 'dsh-local-stt' }, Button),
+            )
+          } catch (error) {
+            console.warn('dsh-local-stt: слот карточки плагина недоступен', error)
+          }
+        })
       },
     }
   },
