@@ -1,10 +1,9 @@
 /**
- * Кнопка «Проверить обновления» в карточке плагина.
+ * Кнопка «Проверить обновления» в шапке карточки плагина.
  *
- * Регистрируется в списковый слот `plugins.detail.section`, который карточка
- * плагина рисует всегда, и показывает себя только для пакета `dsh-local-stt`.
- * Сервис голосового ввода берётся через `ctx.get`, поэтому кнопка появляется
- * даже если ремоут ещё не смонтирован.
+ * Проверяет три вещи: движки, модели (SHA-256 всех файлов) и наличие новой
+ * версии плагина на GitHub. Живёт в слотовом списке `plugins.detail.actions`
+ * и показывает себя только для пакета `dsh-local-stt`.
  */
 window.__ModuleLoader__.load({
   id: 'dsh-local-stt',
@@ -12,8 +11,9 @@ window.__ModuleLoader__.load({
     const React = require('react')
     const h = React.createElement
     const PACKAGE = 'dsh-local-stt'
+    const REPO = 'nikimagic/dsh-local-stt'
 
-    function label(provider) {
+    function phaseLabel(provider) {
       const phase = provider.preparation?.phase ?? 'ready'
       if (phase === 'downloading') {
         const done = provider.preparation.completedBytes ?? 0
@@ -22,9 +22,9 @@ window.__ModuleLoader__.load({
         return `скачивание ${provider.preparation.resource ?? ''} ${percent}%`.trim()
       }
       if (phase === 'loading') return 'распаковка движка'
-      if (phase === 'checking') return 'проверка файлов'
+      if (phase === 'checking') return 'сверка хешей'
       if (phase === 'unprepared') return 'нужно скачать'
-      if (phase === 'failed') return 'ошибка подготовки'
+      if (phase === 'failed') return 'ошибка'
       if (phase === 'cancelled') return 'отменено'
       return 'готово'
     }
@@ -32,6 +32,49 @@ window.__ModuleLoader__.load({
     function busy(provider) {
       const phase = provider.preparation?.phase
       return phase === 'checking' || phase === 'downloading' || phase === 'loading'
+    }
+
+    function compareVersions(left, right) {
+      const parse = (value) =>
+        String(value).replace(/^v/i, '').split(/[.+-]/).map((part) => Number.parseInt(part, 10) || 0)
+      const a = parse(left)
+      const b = parse(right)
+      for (let index = 0; index < Math.max(a.length, b.length); index++) {
+        const one = a[index] ?? 0
+        const two = b[index] ?? 0
+        if (one !== two) return one > two ? 1 : -1
+      }
+      return 0
+    }
+
+    /** Последняя версия плагина: сначала релизы GitHub, затем индекс jsDelivr. */
+    async function latestVersion() {
+      try {
+        const response = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, {
+          headers: { Accept: 'application/vnd.github+json' },
+          cache: 'no-store',
+        })
+        if (response.ok) {
+          const data = await response.json()
+          if (typeof data?.tag_name === 'string' && data.tag_name) return data.tag_name
+        }
+      } catch {
+        // Сеть или CORS — пробуем индекс.
+      }
+      try {
+        const response = await fetch(`https://cdn.jsdelivr.net/gh/${REPO}@main/docs/index.json`, {
+          cache: 'no-store',
+        })
+        if (response.ok) {
+          const data = await response.json()
+          const versions = data?.plugins?.[0]?.versions ?? []
+          const last = versions[versions.length - 1]
+          if (typeof last?.version === 'string') return last.version
+        }
+      } catch {
+        // Ничего не осталось.
+      }
+      return undefined
     }
 
     return {
@@ -46,7 +89,8 @@ window.__ModuleLoader__.load({
         }
 
         function CheckUpdates(props) {
-          const [text, setText] = React.useState('Проверить обновления')
+          const [label, setLabel] = React.useState('Проверить обновления')
+          const [summary, setSummary] = React.useState('')
           const [running, setRunning] = React.useState(false)
           const alive = React.useRef(true)
 
@@ -56,6 +100,7 @@ window.__ModuleLoader__.load({
 
           const subject = props?.subject
           const name = subject?.pkg?.name ?? subject?.name
+          const installed = subject?.pkg?.version
           const ours = name === PACKAGE
 
           const readCatalog = async () => {
@@ -66,74 +111,98 @@ window.__ModuleLoader__.load({
             return (result?.value ?? result)?.providers ?? []
           }
 
-          const wait = async () => {
+          const waitAssets = async () => {
             for (let attempt = 0; attempt < 600 && alive.current; attempt++) {
               const providers = await readCatalog()
               const active = providers.filter(busy)
-              if (active.length === 0) {
-                const failed = providers.filter((provider) => provider.preparation?.phase === 'failed')
-                setRunning(false)
-                setText(failed.length > 0 ? 'Ошибка подготовки — откройте голосовой ввод' : 'Проверка пройдена')
-                return
-              }
-              setText(label(active[0]))
+              if (active.length === 0) return providers
+              setSummary(phaseLabel(active[0]))
               await new Promise((resolve) => setTimeout(resolve, 1000))
             }
-            if (alive.current) {
-              setRunning(false)
-              setText('Проверка идёт в фоне')
-            }
+            return await readCatalog()
           }
+
+          const orderOf = (pluginText) => (pluginText.startsWith('есть') ? 'Есть обновление' : 'Проверить обновления')
 
           const run = async () => {
             setRunning(true)
-            setText('Проверка файлов')
+            setLabel('Проверка…')
+            setSummary('сверка хешей')
             try {
               const service = speech()
               if (!service) throw new Error('голосовой ввод не подключён')
               const providers = await readCatalog()
               for (const provider of providers) {
-                // Второй аргумент — options; ремоут требует его явно.
                 const result = await service.prepare(provider.id, undefined)
                 if (result && result.ok === false) throw result.error
               }
-              await wait()
+              const settled = await waitAssets()
+              const broken = settled.filter((provider) => provider.preparation?.phase === 'failed')
+              const missing = settled.filter((provider) => provider.preparation?.phase === 'unprepared')
+              const assets = broken.length > 0 ? 'ошибка' : missing.length > 0 ? 'нужно скачать' : 'ок'
+
+              const remote = await latestVersion()
+              let pluginText
+              if (!remote) pluginText = 'проверить не удалось'
+              else if (!installed) pluginText = `последняя ${remote}`
+              else {
+                const order = compareVersions(remote, installed)
+                pluginText =
+                  order > 0
+                    ? `есть ${remote}`
+                    : order < 0
+                      ? `${installed} — локальная новее (${remote})`
+                      : `${installed} — последняя`
+              }
+
+              if (!alive.current) return
+              setRunning(false)
+              setLabel(orderOf(pluginText))
+              setSummary(`движки и модели: ${assets} · плагин: ${pluginText}`)
             } catch (error) {
               if (!alive.current) return
               setRunning(false)
-              setText(`Ошибка: ${error instanceof Error ? error.message : String(error)}`)
+              setLabel('Проверить обновления')
+              setSummary(`ошибка: ${error instanceof Error ? error.message : String(error)}`)
             }
           }
 
           if (!ours) return null
 
           return h(
-            'button',
-            {
-              type: 'button',
-              disabled: running,
-              title: 'Пересчитать SHA-256 движков и моделей и докачать недостающее',
-              onClick: () => {
-                if (!running) void run()
+            'div',
+            { style: { display: 'inline-flex', alignItems: 'center', gap: 8 } },
+            h(
+              'button',
+              {
+                type: 'button',
+                disabled: running,
+                title: 'Проверяет движки и модели по SHA-256 и сверяет версию с GitHub',
+                onClick: () => {
+                  if (!running) void run()
+                },
+                style: {
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '5px 12px',
+                  borderRadius: 8,
+                  border: '1px solid var(--dsw-alias-border-secondary, rgba(127,127,127,.35))',
+                  background: 'transparent',
+                  color: 'inherit',
+                  font: 'inherit',
+                  fontSize: 13,
+                  cursor: running ? 'default' : 'pointer',
+                  opacity: running ? 0.7 : 1,
+                  whiteSpace: 'nowrap',
+                },
               },
-              style: {
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '5px 12px',
-                borderRadius: 8,
-                border: '1px solid var(--dsw-alias-border-secondary, rgba(127,127,127,.35))',
-                background: 'transparent',
-                color: 'inherit',
-                font: 'inherit',
-                fontSize: 13,
-                cursor: running ? 'default' : 'pointer',
-                opacity: running ? 0.7 : 1,
-                whiteSpace: 'nowrap',
-              },
-            },
-            h('span', { 'aria-hidden': true }, running ? '⏳' : '⟳'),
-            h('span', null, text),
+              h('span', { 'aria-hidden': true }, running ? '⏳' : '⟳'),
+              h('span', null, label),
+            ),
+            summary
+              ? h('span', { style: { fontSize: 12, opacity: 0.75, whiteSpace: 'nowrap' } }, summary)
+              : null,
           )
         }
 
