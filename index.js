@@ -314,7 +314,7 @@ function killTree(pid) {
   })
 }
 
-class HttpSpeechProvider {
+export class HttpSpeechProvider {
   constructor(ctx, options) {
     this.ctx = ctx
     this.options = options
