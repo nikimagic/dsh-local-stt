@@ -43,8 +43,8 @@ https://cdn.jsdelivr.net/gh/nikimagic/dsh-local-stt@main/docs/index.json
 
 | Что | Откуда | Размер |
 |---|---|---:|
-| Движок FastFlowLM 1.0.13 | релиз GitHub `engines-1` | 39,1 МБ |
-| Движок audio.cpp 0.9.4 | релиз GitHub `engines-1` | 35,7 МБ |
+| Движок FastFlowLM 1.0.13 | официальный релиз `ROCm/FastFlowLM`, резерв — `engines-1` | 38,4 МБ |
+| Движок audio.cpp 0.9.4 | официальный релиз `0xShug0/audio.cpp`, резерв — `engines-1` | 84,1 МБ |
 | Модель Whisper | Hugging Face, ревизия закреплена | 622,9 МБ |
 | Модель Orukeet | Hugging Face, ревизия закреплена | 873,5 МБ |
 
