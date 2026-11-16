@@ -53,6 +53,7 @@ window.__ModuleLoader__.load({
         const response = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, {
           headers: { Accept: 'application/vnd.github+json' },
           cache: 'no-store',
+          signal: AbortSignal.timeout(6000),
         })
         if (response.ok) {
           const data = await response.json()
@@ -64,6 +65,7 @@ window.__ModuleLoader__.load({
       try {
         const response = await fetch(`https://cdn.jsdelivr.net/gh/${REPO}@main/docs/index.json`, {
           cache: 'no-store',
+          signal: AbortSignal.timeout(6000),
         })
         if (response.ok) {
           const data = await response.json()

@@ -852,7 +852,7 @@ class HttpSpeechProvider {
     const signal = combineSignals([controller.signal, this.lifetime.signal])
     try {
       this.publish(this.checking())
-      const engineState = verifyEngine(this.engine, this.enginesDir)
+      const engineState = await verifyEngine(this.engine, this.enginesDir)
       const modelsState = await verifyModels(this.modelSpec, (file) => this.targetFor(file), { signal })
 
       this.ctx.logger?.info?.(

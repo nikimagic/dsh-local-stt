@@ -147,22 +147,50 @@ test('проверка движка находит подменённый фай
     }
     const enginesDir = join(dir, 'engines')
     await provisionEngine({ engine, enginesDir, baseUrl: server.url })
-    assert.equal(verifyEngine(engine, enginesDir).state, 'ok')
+    assert.equal((await verifyEngine(engine, enginesDir)).state, 'ok')
 
     writeFileSync(join(enginesDir, engine.dir, 'share', 'model.txt'), 'tampered')
-    const broken = verifyEngine(engine, enginesDir)
+    const broken = await verifyEngine(engine, enginesDir)
     assert.equal(broken.state, 'broken')
     assert.deepEqual(broken.broken, ['share/model.txt'])
 
     // Проверка только читает: без манифеста состояние unknown и ничего не пишется.
     rmSync(join(enginesDir, engine.dir, '.installed.json'), { force: true })
-    const unknown = verifyEngine(engine, enginesDir)
+    const unknown = await verifyEngine(engine, enginesDir)
     assert.equal(unknown.state, 'unknown')
     assert.equal(existsSync(join(enginesDir, engine.dir, '.installed.json')), false)
 
     // Служебные файлы (логи, temp) на результат не влияют.
     writeFileSync(join(enginesDir, engine.dir, 'plugin.log'), 'runtime log')
-    assert.equal(verifyEngine(engine, enginesDir).state, 'unknown')
+    assert.equal((await verifyEngine(engine, enginesDir)).state, 'unknown')
+  } finally {
+    await serverState.close?.()
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('архив без исполняемого файла не занимает каталог версии', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-engine-nomarker-'))
+  const serverState = {}
+  try {
+    const { archivePath, size, sha256 } = await buildArchive(dir, { 'share/data.txt': 'no binary here' })
+    const server = await serveArchive(archivePath, 'flm-test.zip')
+    serverState.close = server.close
+    const engine = {
+      id: 'flm',
+      label: 'FastFlowLM test',
+      archive: 'flm-test.zip',
+      size,
+      sha256,
+      dir: join('fastflowlm', '1.0.13'),
+      marker: 'flm.exe',
+    }
+    const enginesDir = join(dir, 'engines')
+    const error = await provisionEngine({ engine, enginesDir, baseUrl: server.url }).catch((problem) => problem)
+    assert.ok(error instanceof AssetError, 'ожидалась ошибка')
+    assert.equal(error.reason, 'integrity')
+    assert.equal(existsSync(join(enginesDir, engine.dir)), false, 'каталог версии не должен появиться')
+    assert.equal(existsSync(join(enginesDir, '.cache', 'flm-staging')), false, 'staging не убран')
   } finally {
     await serverState.close?.()
     rmSync(dir, { recursive: true, force: true })
