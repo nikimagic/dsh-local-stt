@@ -1,6 +1,6 @@
 {
   "name": "dsh-local-stt",
-  "version": "0.3.9",
+  "version": "0.3.10",
   "description": "Локальный ASR для DSH: Whisper NPU по умолчанию и Orukeet Vulkan как альтернатива",
   "license": "MIT",
   "author": "NikiMagic",
@@ -20,6 +20,7 @@
   },
   "files": [
     "index.js",
+    "lib",
     "cordis.patch.yml",
     "README.md",
     "LICENSE",

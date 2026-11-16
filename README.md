@@ -48,6 +48,18 @@ audiocpp_server.exe --config audio-vulkan.json --port 8028 --no-ui
 
 ## Модели
 
+Модели занимают около 1,6 ГБ и в Git не входят. Плагин готовит их при первом
+запуске и показывает прогресс в штатной карточке голосового ввода. Источников
+два:
+
+- **Hugging Face** — скачивание по закреплённой ревизии, проверка размера и
+  SHA-256; при сетевой ошибке — резервное зеркало `hf-mirror.com`;
+- **Локальная папка** — копирование из каталога `engines` без сети.
+
+Источник выбирается в карточке подготовки. Локальный каталог задаётся полем
+`localSource` или переменной `DSH_LOCAL_STT_SOURCES`. Подробности —
+[docs/MODELS.md](docs/MODELS.md).
+
 Пути по умолчанию:
 
 ```text
@@ -65,8 +77,7 @@ Orukeet:  <plugin>\engines\audio-cpp\models\Orukeet-GGUF\orukeet-q8_0.gguf
 Модель Whisper лежит в каталоге, на который указывает `FLM_MODEL_PATH`.
 
 Сборка полного комплекта движков и моделей описана в
-[docs/ENGINES.md](docs/ENGINES.md). В Git хранится только код: бинарники и
-модели занимают около 1,6 ГБ и в пакет не входят.
+[docs/ENGINES.md](docs/ENGINES.md).
 
 ## Настройка
 
@@ -77,6 +88,7 @@ Orukeet:  <plugin>\engines\audio-cpp\models\Orukeet-GGUF\orukeet-q8_0.gguf
     language: ru
 - id: speech-to-text-local
   config:
+    localSource: C:\dsh\dsh-local-stt\engines
     whisper:
       baseUrl: http://127.0.0.1:52626
       model: whisper-v3:turbo
@@ -90,11 +102,17 @@ Orukeet:  <plugin>\engines\audio-cpp\models\Orukeet-GGUF\orukeet-q8_0.gguf
 `allowRemote`. Порт в `args` можно оставить как `{port}` — он подставится
 из `baseUrl`.
 
+`localSource` — каталог `engines` с готовыми моделями для второго источника
+подготовки. `modelPath` задаёт и целевой файл модели, и каталог, рядом с
+которым лягут остальные файлы модели.
+
 `baseUrl` по умолчанию обязан указывать на loopback. Для внешнего адреса
 нужно явно задать `allowRemote: true`; это осознанно отключает локальность.
 
 ## Ограничения
 
+- Первый запуск требует скачать около 1,6 ГБ моделей либо указать локальную
+  папку с ними; до этого распознавание не стартует.
 - Официальная кнопка микрофона не отдаёт событие `mousedown`; провайдер
   получает WAV после остановки записи. Поэтому сервер стартует перед
   распознаванием, а не в момент клика. Для старта ровно по нажатию нужна

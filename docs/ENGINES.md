@@ -85,9 +85,31 @@ node --check index.js
 DSH_LOCAL_STT_ENGINES=<путь к engines>
 ```
 
-## Хеши моделей
+## Модели: источники и хеши
 
-```text
-Whisper  8FB97604BF5762EE26EFA696CFC9EB70724110358C7B4CA628A7973BF8A16291
-Orukeet  420D78F2CB9C570127BFCEF36C0E2B8F95E07F81C3722FECE598D8C88FBD11CE
-```
+Ревизии закреплены в `lib/models.js`, поэтому содержимое файлов неизменно
+и хеши не разъедутся. Проверяются размер и SHA-256.
+
+### Whisper — `FastFlowLM/Whisper-V3-Turbo-NPU2`
+
+Ревизия `594eecd2d80b20cbb04ef0099162335d1dd1899a`, кладётся в
+`<plugin>\engines\fastflowlm\models\Whisper-V3-Turbo-NPU2\`.
+
+| Файл | Размер, байт | SHA-256 |
+|---|---:|---|
+| `config.json` | 1 283 | `54481b3c31d2fc953ed383ec5670109bb4cbcaf1892e73ba568cbd23583688aa` |
+| `tokenizer.json` | 2 710 337 | `297b13372ac43916285644fb9687add3cc62ee2a1adb60da3dc25cc94c1871fd` |
+| `tokenizer_config.json` | 282 897 | `c5486679eb96d17356cc53c6c3533009cc151d0015075f2eef482dfe8484c863` |
+| `model.q4nx` | 650 175 128 | `8fb97604bf5762ee26efa696cfc9eb70724110358c7b4ca628a7973bf8a16291` |
+
+### Orukeet — `audio-cpp/audio.cpp-gguf`
+
+Ревизия `7a103b33f04120535bdfe97b5f65b79d3c90d708`, путь в репозитории
+`Orukeet-GGUF/orukeet-q8_0.gguf`, кладётся в
+`<plugin>\engines\audio-cpp\models\Orukeet-GGUF\`.
+
+| Файл | Размер, байт | SHA-256 |
+|---|---:|---|
+| `orukeet-q8_0.gguf` | 915 908 144 | `420d78f2cb9c570127bfcef36c0e2b8f95e07f81c3722fece598d8c88fbd11ce` |
+
+Скачивание и копирование выполняет сам плагин — см. [MODELS.md](MODELS.md).

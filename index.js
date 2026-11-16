@@ -9,7 +9,14 @@ import { spawn } from 'node:child_process'
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import {
+  HUGGINGFACE,
+  MODELS,
+  missingFiles,
+  localSourceReady,
+  provisionModels as provisionModelFiles,
+} from './lib/models.js'
 
 export const name = 'dsh-local-stt'
 export const inject = ['speechToText']
@@ -308,9 +315,24 @@ class HttpSpeechProvider {
   constructor(ctx, options) {
     this.ctx = ctx
     this.options = options
+    this.model = options.model
+    this.primaryName = options.primaryName
+    this.primaryPath = options.modelPath
+    this.modelsDir = dirname(options.modelPath)
+    this.localSource = options.localSource || ''
+    this.info = {
+      id: options.info.id,
+      name: options.info.name,
+      location: 'host-local',
+      languages: options.info.languages,
+      downloadSources: [],
+      setupEstimate: options.model.estimate,
+    }
+    this.info.downloadSources = this.downloadSources()
     this.listeners = new Set()
     this.state = {
       phase: 'checking',
+      startedAt: Date.now(),
       steps: [{ kind: 'check', status: 'running', startedAt: Date.now() }],
     }
     this.checking = null
@@ -321,6 +343,8 @@ class HttpSpeechProvider {
     this.disposed = false
     this.lifetime = new AbortController()
     this.startAbort = new AbortController()
+    this.provision = null
+    this.provisionAbort = null
     this.queue = []
     this.active = null
     const profile = String(process.env.DSH_PROFILE || 'default').replace(/[^A-Za-z0-9._-]/g, '_')
@@ -372,11 +396,73 @@ class HttpSpeechProvider {
     }
   }
 
+  /** Модель ещё не лежит на диске: DSH сам предложит «Скачать и подготовить». */
+  unprepared() {
+    return {
+      phase: 'unprepared',
+      steps: [{ kind: 'model', status: 'pending', startedAt: Date.now() }],
+    }
+  }
+
+  downloading({ resource, completedBytes, totalBytes }) {
+    return {
+      phase: 'downloading',
+      resource,
+      completedBytes,
+      ...(totalBytes ? { totalBytes } : {}),
+      steps: [{ kind: 'model', status: 'running', startedAt: Date.now() }],
+    }
+  }
+
+  cancelledState() {
+    return {
+      phase: 'cancelled',
+      steps: [{ kind: 'model', status: 'cancelled', startedAt: Date.now() }],
+    }
+  }
+
+  downloadFailure(error) {
+    const resource = typeof error?.resource === 'string' ? error.resource : 'model'
+    const source = typeof error?.source === 'string' ? error.source : HUGGINGFACE
+    const reason = typeof error?.reason === 'string' ? error.reason : 'unknown'
+    const status = Number(error?.status)
+    return {
+      phase: 'failed',
+      message: error instanceof Error ? error.message : String(error),
+      download: { resource, source, reason, ...(status > 0 ? { status } : {}) },
+      steps: [{ kind: 'model', status: 'failed', startedAt: Date.now() }],
+    }
+  }
+
+  /** Куда положить файл манифеста: основной файл остаётся на месте `modelPath`. */
+  targetFor(file) {
+    return file.name === this.primaryName ? this.primaryPath : join(this.modelsDir, file.name)
+  }
+
+  /** Источники моделей: Hugging Face и, если файлы есть, локальная папка с исходниками. */
+  downloadSources() {
+    const sources = [HUGGINGFACE]
+    if (localSourceReady(this.model, this.localSource)) {
+      sources.push(pathToFileURL(this.localSource).href)
+    }
+    return sources
+  }
+
+  /** Пересчитать готовность моделей и опубликовать её. */
+  inspect() {
+    this.info.downloadSources = this.downloadSources()
+    if (missingFiles(this.model, (file) => this.targetFor(file)).length === 0) {
+      if (this.state.phase !== 'ready') this.publish(this.standby())
+      return
+    }
+    this.publish(this.unprepared())
+  }
+
   initialise() {
     if (this.ownedProcess || this.state.phase === 'ready' || this.cleanupPromise) return
     try {
       this.preflight()
-      this.publish(this.standby())
+      this.inspect()
       this.cleanupPromise = this.cleanupStale().catch((error) => {
         this.ctx.logger?.warn?.(`dsh-local-stt: cleanup failed: ${error instanceof Error ? error.message : error}`)
       })
@@ -503,9 +589,6 @@ class HttpSpeechProvider {
     const executable = this.options.command || this.options.launcher
     if (executable && !existsSync(executable)) {
       throw new Error(`Исполняемый файл не найден: ${executable}`)
-    }
-    if (this.options.modelPath && !existsSync(this.options.modelPath)) {
-      throw new Error(`Файл модели не найден: ${this.options.modelPath}`)
     }
   }
 
@@ -713,22 +796,73 @@ class HttpSpeechProvider {
     this.publish(this.failure(message))
   }
 
-  async prepare() {
-    if (this.state.phase === 'ready' || this.ownedProcess) return
+  async prepare(options = {}) {
+    if (this.disposed) return
     if (this.cleanupBlocked) {
       this.publish(this.failure(this.cleanupBlocked))
       return
     }
     try {
       this.preflight()
-      this.publish(this.standby())
     } catch (error) {
       this.publish(this.failure(error instanceof Error ? error.message : String(error)))
+      return
+    }
+    this.info.downloadSources = this.downloadSources()
+    if (missingFiles(this.model, (file) => this.targetFor(file)).length === 0) {
+      if (this.state.phase !== 'ready' && this.state.phase !== 'standby') this.publish(this.standby())
+      return
+    }
+    if (this.provision) return
+    const source = typeof options?.downloadSource === 'string' ? options.downloadSource : undefined
+    this.provision = this.runProvision(source)
+  }
+
+  /** Скачать модели с Hugging Face или скопировать их из локальной папки с исходниками. */
+  async runProvision(source) {
+    const controller = new AbortController()
+    this.provisionAbort = controller
+    const signal = combineSignals([controller.signal, this.lifetime.signal])
+    try {
+      const result = await provisionModelFiles({
+        model: this.model,
+        targetFor: (file) => this.targetFor(file),
+        localDir: this.localSource,
+        source,
+        signal,
+        onProgress: (progress) => {
+          if (!this.disposed) this.publish(this.downloading(progress))
+        },
+      })
+      this.ctx.logger?.info?.(
+        `dsh-local-stt: модели ${this.options.label} подготовлены (${result.files} файлов, ${result.bytes} байт)`,
+      )
+      this.publish(this.standby())
+    } catch (error) {
+      if (signal.aborted) {
+        this.publish(this.cancelledState())
+      } else {
+        this.ctx.logger?.warn?.(
+          `dsh-local-stt: модели не подготовлены: ${error instanceof Error ? error.message : error}`,
+        )
+        this.publish(this.downloadFailure(error))
+      }
+    } finally {
+      this.provisionAbort = null
+      this.provision = null
     }
   }
 
   async cancel() {
     this.startAbort.abort(new Error('Подготовка отменена'))
+    this.provisionAbort?.abort(new Error('Подготовка отменена'))
+    if (this.provision) {
+      try {
+        await this.provision
+      } catch {
+        // Ошибка уже опубликована в состоянии подготовки.
+      }
+    }
     if (!this.ownedProcess) return
     await this.stopOwned()
   }
@@ -785,6 +919,13 @@ class HttpSpeechProvider {
 
   async transcribe(input, signal) {
     if (this.disposed) throw new Error('Провайдер остановлен')
+    const missing = missingFiles(this.model, (file) => this.targetFor(file))
+    if (missing.length > 0) {
+      throw new Error(
+        `${this.options.label}: модели не подготовлены (${missing.map((file) => file.name).join(', ')}). ` +
+          'Откройте «Голосовой ввод» и нажмите «Скачать и подготовить».',
+      )
+    }
     const combined = combineSignals([signal, this.lifetime.signal])
     combined.throwIfAborted()
     const language = String(input?.language || this.options.language || 'ru').trim()
@@ -834,6 +975,14 @@ class HttpSpeechProvider {
     this.disposed = true
     this.lifetime.abort(new Error('disposed'))
     this.startAbort.abort(new Error('disposed'))
+    this.provisionAbort?.abort(new Error('disposed'))
+    if (this.provision) {
+      try {
+        await this.provision
+      } catch {
+        // Отмена уже обработана в runProvision.
+      }
+    }
     for (const entry of this.queue) {
       entry.cleanup?.()
       entry.reject(new Error('Провайдер остановлен'))
@@ -845,14 +994,20 @@ class HttpSpeechProvider {
 }
 
 function createProvider(ctx, config, kind) {
+  const model = MODELS[kind]
+  const shared = {
+    ...config,
+    kind,
+    model,
+    primaryName: kind === 'whisper' ? 'model.q4nx' : 'orukeet-q8_0.gguf',
+  }
   if (kind === 'whisper') {
     return new HttpSpeechProvider(ctx, {
-      ...config,
-      kind: 'whisper',
+      ...shared,
       label: 'FastFlowLM Whisper NPU',
       healthPath: '/v1/models',
       transcribePath: '/v1/audio/transcriptions',
-      startHint: 'Проверьте FLM_MODEL_PATH в start-flm.bat и запустите flm pull whisper-v3:turbo.',
+      startHint: 'Проверьте, что движок FastFlowLM разложен в engines\\fastflowlm.',
       info: {
         id: 'whisper-npu',
         name: 'Whisper large-v3-turbo (NPU)',
@@ -861,12 +1016,11 @@ function createProvider(ctx, config, kind) {
     })
   }
   return new HttpSpeechProvider(ctx, {
-    ...config,
-    kind: 'orukeet',
+    ...shared,
     label: 'audio.cpp Orukeet Vulkan',
     healthPath: '/health',
     transcribePath: '/v1/audio/transcriptions',
-    startHint: 'Проверьте, что модели audio.cpp лежат в tts_cpp/models.',
+    startHint: 'Проверьте, что движок audio.cpp разложен в engines\\audio-cpp.',
     info: {
       id: 'orukeet-vulkan',
       name: 'Orukeet r3 (Vulkan)',
@@ -877,24 +1031,23 @@ function createProvider(ctx, config, kind) {
 
 export function apply(ctx, rawConfig = {}) {
   const config = rawConfig && typeof rawConfig === 'object' ? rawConfig : {}
+  const localSource = String(config.localSource ?? process.env.DSH_LOCAL_STT_SOURCES ?? '').trim()
   const whisperConfig = normalizeEndpoint(config.whisper, DEFAULT_WHISPER)
   const orukeetConfig = normalizeEndpoint(config.orukeet, DEFAULT_ORUKEET)
 
-  const whisper = createProvider(ctx, whisperConfig, 'whisper')
-  const orukeet = createProvider(ctx, orukeetConfig, 'orukeet')
+  const whisper = createProvider(ctx, { ...whisperConfig, localSource }, 'whisper')
+  const orukeet = createProvider(ctx, { ...orukeetConfig, localSource }, 'orukeet')
 
   ctx.effect(() => {
     const disposers = []
     const register = (provider) => {
-      disposers.push(ctx.speechToText.register({
-        info: {
-          ...provider.options.info,
-          location: 'host-local',
-          downloadSources: [],
-        },
-        preparation: provider,
-        transcribe: (input, signal) => provider.transcribe(input, signal),
-      }))
+      disposers.push(
+        ctx.speechToText.register({
+          info: provider.info,
+          preparation: provider,
+          transcribe: (input, signal) => provider.transcribe(input, signal),
+        }),
+      )
       provider.initialise()
     }
     register(whisper)
