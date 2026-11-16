@@ -8,3 +8,4 @@ engines/
 *.bin
 .DS_Store
 Thumbs.db
+dist/

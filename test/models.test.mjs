@@ -8,14 +8,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import {
-  MODELS,
-  ModelDownloadError,
-  fileSize,
-  localSourceReady,
-  missingFiles,
-  provisionModels,
-} from '../lib/models.js'
+import { AssetError } from '../lib/errors.js'
+import { MODELS, fileSize, localSourceReady, missingFiles, provisionModels } from '../lib/models.js'
 
 const ENGINES = new URL('../engines/', import.meta.url)
 
@@ -156,7 +150,7 @@ test('подменённый файл не принимается', async () => 
       localDir: '',
       source: 'https://huggingface.co',
     }).catch((problem) => problem)
-    assert.ok(error instanceof ModelDownloadError, 'ожидалась ошибка')
+    assert.ok(error instanceof AssetError, 'ожидалась ошибка')
     assert.equal(error.reason, 'integrity')
     assert.equal(existsSync(join(dir, `${file.name}.part`)), false, 'битый .part не удалён')
     assert.equal(existsSync(join(dir, file.name)), false, 'файл не должен появиться')

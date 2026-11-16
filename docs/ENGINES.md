@@ -72,6 +72,38 @@ audio.cpp 0.9.4:
 Он разрешается относительно каталога `config`, поэтому переносится вместе
 с плагином.
 
+## Архивы для релиза
+
+Плагин скачивает движки архивами из релиза GitHub (тег `engines-1`), чтобы не
+раздувать историю репозитория. Сборка:
+
+```text
+node scripts/pack-engines.mjs
+```
+
+Скрипт собирает `dist\flm-1.0.13-win-x64.zip` и
+`dist\audiocpp-0.9.4-win-x64.zip`, пишет их размер и SHA-256 в `lib/engines.js`
+и печатает хеши. Далее архивы загружаются в релиз с этими именами:
+
+```text
+https://github.com/nikimagic/dsh-local-stt/releases/download/engines-1/flm-1.0.13-win-x64.zip
+https://github.com/nikimagic/dsh-local-stt/releases/download/engines-1/audiocpp-0.9.4-win-x64.zip
+```
+
+Zip пишется своим модулем `lib/zip.js` с фиксированными датами записей,
+поэтому повторная сборка из тех же файлов даёт те же байты и те же хеши.
+Служебные каталоги `temp\` и `*.log` в архив не попадают.
+
+Если тег или адрес другие, укажите базовый адрес в конфиге:
+
+```yaml
+- id: speech-to-text-local
+  config:
+    engines:
+      baseUrl: https://example.com/engines
+      dir: C:\dsh\engines
+```
+
 ## Проверка
 
 ```text

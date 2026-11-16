@@ -17,6 +17,7 @@ import {
   localSourceReady,
   provisionModels as provisionModelFiles,
 } from './lib/models.js'
+import { ENGINES, engineReady, provisionEngine } from './lib/engines.js'
 
 export const name = 'dsh-local-stt'
 export const inject = ['speechToText']
@@ -316,6 +317,9 @@ class HttpSpeechProvider {
     this.ctx = ctx
     this.options = options
     this.model = options.model
+    this.engine = options.engine
+    this.enginesDir = options.enginesDir
+    this.enginesBaseUrl = options.enginesBaseUrl
     this.primaryName = options.primaryName
     this.primaryPath = options.modelPath
     this.modelsDir = dirname(options.modelPath)
@@ -326,7 +330,11 @@ class HttpSpeechProvider {
       location: 'host-local',
       languages: options.info.languages,
       downloadSources: [],
-      setupEstimate: options.model.estimate,
+      setupEstimate: {
+        ...options.model.estimate,
+        recommendedDiskBytes:
+          options.model.estimate.recommendedDiskBytes + (options.engine?.size || 0) + 20_000_000,
+      },
     }
     this.info.downloadSources = this.downloadSources()
     this.listeners = new Set()
@@ -448,27 +456,42 @@ class HttpSpeechProvider {
     return sources
   }
 
-  /** Пересчитать готовность моделей и опубликовать её. */
+  /** Движок провайдера разложен в каталоге engines. */
+  engineReady() {
+    return !this.engine || engineReady(this.engine, this.enginesDir)
+  }
+
+  /** Недостающие файлы модели. */
+  missingFiles() {
+    return missingFiles(this.model, (file) => this.targetFor(file))
+  }
+
+  /** Пересчитать готовность движка и моделей и опубликовать её. */
   inspect() {
     this.info.downloadSources = this.downloadSources()
-    if (missingFiles(this.model, (file) => this.targetFor(file)).length === 0) {
-      if (this.state.phase !== 'ready') this.publish(this.standby())
+    if (!this.engineReady() || this.missingFiles().length > 0) {
+      this.publish(this.unprepared())
       return
     }
-    this.publish(this.unprepared())
+    if (this.state.phase !== 'ready') this.publish(this.standby())
+  }
+
+  /** Во время распаковки архива движка. */
+  loading() {
+    return {
+      phase: 'loading',
+      startedAt: Date.now(),
+      step: 'load',
+      steps: [{ kind: 'load', status: 'running', startedAt: Date.now() }],
+    }
   }
 
   initialise() {
     if (this.ownedProcess || this.state.phase === 'ready' || this.cleanupPromise) return
-    try {
-      this.preflight()
-      this.inspect()
-      this.cleanupPromise = this.cleanupStale().catch((error) => {
-        this.ctx.logger?.warn?.(`dsh-local-stt: cleanup failed: ${error instanceof Error ? error.message : error}`)
-      })
-    } catch (error) {
-      this.publish(this.failure(error instanceof Error ? error.message : String(error)))
-    }
+    this.inspect()
+    this.cleanupPromise = this.cleanupStale().catch((error) => {
+      this.ctx.logger?.warn?.(`dsh-local-stt: cleanup failed: ${error instanceof Error ? error.message : error}`)
+    })
   }
 
   writePid(pid, identity = {}) {
@@ -802,14 +825,8 @@ class HttpSpeechProvider {
       this.publish(this.failure(this.cleanupBlocked))
       return
     }
-    try {
-      this.preflight()
-    } catch (error) {
-      this.publish(this.failure(error instanceof Error ? error.message : String(error)))
-      return
-    }
     this.info.downloadSources = this.downloadSources()
-    if (missingFiles(this.model, (file) => this.targetFor(file)).length === 0) {
+    if (this.engineReady() && this.missingFiles().length === 0) {
       if (this.state.phase !== 'ready' && this.state.phase !== 'standby') this.publish(this.standby())
       return
     }
@@ -818,12 +835,29 @@ class HttpSpeechProvider {
     this.provision = this.runProvision(source)
   }
 
-  /** Скачать модели с Hugging Face или скопировать их из локальной папки с исходниками. */
+  /** Скачать движок и модели: сначала архив движка, затем файлы модели. */
   async runProvision(source) {
     const controller = new AbortController()
     this.provisionAbort = controller
     const signal = combineSignals([controller.signal, this.lifetime.signal])
     try {
+      if (!this.engineReady()) {
+        const result = await provisionEngine({
+          engine: this.engine,
+          enginesDir: this.enginesDir,
+          baseUrl: this.enginesBaseUrl,
+          signal,
+          onProgress: (progress) => {
+            if (!this.disposed) this.publish(this.downloading(progress))
+          },
+          onExtract: () => {
+            if (!this.disposed) this.publish(this.loading())
+          },
+        })
+        if (result.installed) {
+          this.ctx.logger?.info?.(`dsh-local-stt: движок ${this.engine.label} установлен`)
+        }
+      }
       const result = await provisionModelFiles({
         model: this.model,
         targetFor: (file) => this.targetFor(file),
@@ -919,7 +953,13 @@ class HttpSpeechProvider {
 
   async transcribe(input, signal) {
     if (this.disposed) throw new Error('Провайдер остановлен')
-    const missing = missingFiles(this.model, (file) => this.targetFor(file))
+    if (!this.engineReady()) {
+      throw new Error(
+        `${this.options.label}: движок не установлен (${this.engine.marker}). ` +
+          'Откройте «Голосовой ввод» и нажмите «Скачать и подготовить».',
+      )
+    }
+    const missing = this.missingFiles()
     if (missing.length > 0) {
       throw new Error(
         `${this.options.label}: модели не подготовлены (${missing.map((file) => file.name).join(', ')}). ` +
@@ -999,6 +1039,7 @@ function createProvider(ctx, config, kind) {
     ...config,
     kind,
     model,
+    engine: ENGINES[kind],
     primaryName: kind === 'whisper' ? 'model.q4nx' : 'orukeet-q8_0.gguf',
   }
   if (kind === 'whisper') {
@@ -1032,11 +1073,15 @@ function createProvider(ctx, config, kind) {
 export function apply(ctx, rawConfig = {}) {
   const config = rawConfig && typeof rawConfig === 'object' ? rawConfig : {}
   const localSource = String(config.localSource ?? process.env.DSH_LOCAL_STT_SOURCES ?? '').trim()
+  const engines = config.engines && typeof config.engines === 'object' ? config.engines : {}
+  const enginesDir = String(engines.dir ?? ENGINES_DIR)
+  const enginesBaseUrl = String(engines.baseUrl ?? '').trim()
   const whisperConfig = normalizeEndpoint(config.whisper, DEFAULT_WHISPER)
   const orukeetConfig = normalizeEndpoint(config.orukeet, DEFAULT_ORUKEET)
 
-  const whisper = createProvider(ctx, { ...whisperConfig, localSource }, 'whisper')
-  const orukeet = createProvider(ctx, { ...orukeetConfig, localSource }, 'orukeet')
+  const shared = { localSource, enginesDir, enginesBaseUrl }
+  const whisper = createProvider(ctx, { ...whisperConfig, ...shared }, 'whisper')
+  const orukeet = createProvider(ctx, { ...orukeetConfig, ...shared }, 'orukeet')
 
   ctx.effect(() => {
     const disposers = []
