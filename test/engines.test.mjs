@@ -147,19 +147,22 @@ test('проверка движка находит подменённый фай
     }
     const enginesDir = join(dir, 'engines')
     await provisionEngine({ engine, enginesDir, baseUrl: server.url })
-    assert.deepEqual(verifyEngine(engine, enginesDir).ok, true)
+    assert.equal(verifyEngine(engine, enginesDir).state, 'ok')
 
     writeFileSync(join(enginesDir, engine.dir, 'share', 'model.txt'), 'tampered')
     const broken = verifyEngine(engine, enginesDir)
-    assert.equal(broken.ok, false)
+    assert.equal(broken.state, 'broken')
     assert.deepEqual(broken.broken, ['share/model.txt'])
 
-    // Раскладка без манифеста принимается и запоминается.
+    // Проверка только читает: без манифеста состояние unknown и ничего не пишется.
     rmSync(join(enginesDir, engine.dir, '.installed.json'), { force: true })
-    const adopted = verifyEngine(engine, enginesDir)
-    assert.equal(adopted.ok, true)
-    assert.equal(adopted.adopted, true)
-    assert.equal(existsSync(join(enginesDir, engine.dir, '.installed.json')), true)
+    const unknown = verifyEngine(engine, enginesDir)
+    assert.equal(unknown.state, 'unknown')
+    assert.equal(existsSync(join(enginesDir, engine.dir, '.installed.json')), false)
+
+    // Служебные файлы (логи, temp) на результат не влияют.
+    writeFileSync(join(enginesDir, engine.dir, 'plugin.log'), 'runtime log')
+    assert.equal(verifyEngine(engine, enginesDir).state, 'unknown')
   } finally {
     await serverState.close?.()
     rmSync(dir, { recursive: true, force: true })

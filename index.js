@@ -854,26 +854,34 @@ class HttpSpeechProvider {
       const engineState = verifyEngine(this.engine, this.enginesDir)
       const modelsState = await verifyModels(this.model, (file) => this.targetFor(file), { signal })
 
-      if (this.ctx.logger?.info) {
-        this.ctx.logger.info(
-          `dsh-local-stt: проверка ${this.options.label}: движок ${engineState.ok ? 'ок' : 'нет'}, ` +
-            `модели: нет ${modelsState.missing.length}, повреждено ${modelsState.broken.length}`,
+      this.ctx.logger?.info?.(
+        `dsh-local-stt: проверка ${this.options.label}: движок ${engineState.state}, ` +
+          `модели: нет ${modelsState.missing.length}, повреждено ${modelsState.broken.length}`,
+      )
+
+      if (engineState.state === 'broken') {
+        // Ничего не трогаем: повреждённый каталог остаётся на месте.
+        this.publish(
+          this.failure(
+            `${this.engine.label}: не сошлись файлы (${engineState.broken.slice(0, 3).join(', ') || 'неизвестно'}). ` +
+              `Каталог engines\\${this.engine.dir} не изменён — удалите его вручную, чтобы поставить заново.`,
+          ),
         )
+        return
       }
 
-      if (engineState.ok && modelsState.missing.length === 0 && modelsState.broken.length === 0) {
+      const engineMissing = engineState.state === 'missing'
+      const modelsMissing = modelsState.missing.length > 0 || modelsState.broken.length > 0
+      if (!engineMissing && !modelsMissing) {
         this.publish(this.standby())
         return
       }
 
-      if (!engineState.ok) {
-        // Замена идёт через промежуточный каталог: старый движок живёт до тех
-        // пор, пока новый архив не скачан, не распакован и не проверен.
-        const result = await provisionEngine({
+      if (engineMissing) {
+        const installed = await provisionEngine({
           engine: this.engine,
           enginesDir: this.enginesDir,
           baseUrl: this.enginesBaseUrl,
-          force: !engineState.ok,
           signal,
           onProgress: (progress) => {
             if (!this.disposed) this.publish(this.downloading(progress))
@@ -882,23 +890,26 @@ class HttpSpeechProvider {
             if (!this.disposed) this.publish(this.loading())
           },
         })
-        if (result.installed) {
-          this.ctx.logger?.info?.(`dsh-local-stt: движок ${this.engine.label} установлен`)
+        if (installed.installed) {
+          this.ctx.logger?.info?.(`dsh-local-stt: движок ${this.engine.label} установлен в ${this.engine.dir}`)
         }
       }
-      const result = await provisionModelFiles({
-        model: this.model,
-        targetFor: (file) => this.targetFor(file),
-        localDir: this.localSource,
-        source,
-        signal,
-        onProgress: (progress) => {
-          if (!this.disposed) this.publish(this.downloading(progress))
-        },
-      })
-      this.ctx.logger?.info?.(
-        `dsh-local-stt: модели ${this.options.label} подготовлены (${result.files} файлов, ${result.bytes} байт)`,
-      )
+      if (modelsMissing) {
+        const result = await provisionModelFiles({
+          model: this.model,
+          targetFor: (file) => this.targetFor(file),
+          localDir: this.localSource,
+          source,
+          signal,
+          files: [...modelsState.missing, ...modelsState.broken],
+          onProgress: (progress) => {
+            if (!this.disposed) this.publish(this.downloading(progress))
+          },
+        })
+        this.ctx.logger?.info?.(
+          `dsh-local-stt: модели ${this.options.label} подготовлены (${result.files} файлов, ${result.bytes} байт)`,
+        )
+      }
       this.publish(this.standby())
     } catch (error) {
       if (signal.aborted) {
