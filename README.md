@@ -1,136 +1,84 @@
 # dsh-local-stt
 
-Локальное распознавание речи для **DeepSeek Harness** на Windows. Два провайдера
-подключаются к официальному голосовому вводу и появляются в его штатном
-переключателе:
+Локальный ASR для **штатного голосового ввода DeepSeek Harness**. Плагин
+добавляет в переключатель провайдеров два варианта:
 
-| Провайдер | Языки | Движок | Скорость на 4 с |
-|---|---|---|---:|
-| **GigaAM v3 RNNT** | русский | [gigastt](https://github.com/ekhodzitsky/gigastt) | ~0,25 с |
-| **Whisper large-v3-turbo** | русский, английский, авто и др. | [whisper.cpp](https://github.com/ggml-org/whisper.cpp) | ~9 с (CPU) |
+| Провайдер | Где считается | Роль |
+|---|---|---|
+| **Whisper large-v3-turbo (NPU)** | XDNA2 NPU через FastFlowLM | по умолчанию |
+| **Orukeet r3 (Vulkan)** | Radeon 880M через audio.cpp | альтернатива |
 
 Официальный `@deepseek-ai/dsh-experimental-voice-input-bundle` остаётся
-хозяином микрофона, записи WAV и настроек. Наши пакеты только добавляют
-распознаватели через `ctx.speechToText`. Микрофон один, переключатель один.
+хозяином микрофона, записи WAV и настроек. Плагин только принимает готовый
+16-кГц PCM16 WAV и отправляет его на локальный HTTP-сервер.
 
-Можно поставить **один общий плагин** `dsh-local-stt` — внутри сразу GigaAM и
-Whisper, одна строка в списке плагинов. Либо поставить их отдельными пакетами
-`dsh-local-gigaam` и `dsh-local-whisper`, если нужен только один движок.
+## Что должно быть запущено
 
-## Требования
-
-- Windows 10/11 x64.
-- DeepSeek Harness `0.2.x` (проверено на `0.2.2-rc.1`).
-- Около 1 ГБ свободного места для движков и моделей.
-- Интернет только для установки; само распознавание локальное и никуда аудио
-  не отправляет.
-
-## Установка
-
-### 1. Скачать движки и модели
-
-В обычном PowerShell:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\setup.ps1
-```
-
-Скрипт проверяет SHA-256 и раскладывает всё в:
+Плагин **не запускает и не скачивает** движки. Нужны два локальных сервера:
 
 ```text
-%USERPROFILE%\.dsh\bin\gigastt\gigastt.exe
-%USERPROFILE%\.dsh\models\gigaam\
-%USERPROFILE%\.dsh\models\gigaam\punct\
-%USERPROFILE%\.dsh\bin\whisper\whisper-server.exe
-%USERPROFILE%\.dsh\models\ggml-large-v3-turbo-q5_0.bin
+FastFlowLM:  http://127.0.0.1:52626
+audio.cpp:   http://127.0.0.1:8028
 ```
 
-Только один движок:
+FastFlowLM:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\setup.ps1 -SkipWhisper
-powershell -ExecutionPolicy Bypass -File .\setup.ps1 -SkipGigaam
+flm serve --asr whisper-v3:turbo --host 127.0.0.1 --port 52626
 ```
 
-### 2. Добавить индекс плагинов
+audio.cpp:
 
-Сначала убедитесь, что включён штатный бандл **«Голосовой ввод»** —
-`@deepseek-ai/dsh-experimental-voice-input-bundle`. Без него не будет
-микрофона, а наши провайдеры некуда подключать.
-
-В DSH: **Плагины → Ещё → Пользовательские магазины плагинов → Добавить
-источник индекса** и вставить:
-
-```text
-https://raw.githubusercontent.com/nikimagic/dsh-local-stt/main/docs/index.json
+```powershell
+tts_cpp\Запустить audio.cpp.bat
 ```
 
-Установить **«GigaAM + Whisper — локально»** — это один плагин с обоими
-провайдерами. Если нужен только один движок, установите **GigaAM v3 —
-локально** или **Whisper — локально** отдельно. После установки перезапустить
-DeepSeek Harness.
+Если сервер не отвечает, провайдер переходит в состояние `failed` и повторяет
+проверку каждые 5 секунд. Кнопка **Prepare** в карточке плагина повторяет
+проверку вручную.
 
-### 3. Выбрать провайдера
+## Настройка
+
+По умолчанию:
+
+```yaml
+- id: speech-to-text
+  config:
+    defaultProvider: whisper-npu
+    language: ru
+- id: speech-to-text-local
+  config:
+    whisper:
+      baseUrl: http://127.0.0.1:52626
+      model: whisper-v3:turbo
+    orukeet:
+      baseUrl: http://127.0.0.1:8028
+      model: orukeet_q8_0
+```
+
+Можно переопределить `baseUrl`, `model`, `language` и `requestTimeoutMs`
+в профиле. Порт и модель должны совпадать с запущенными серверами.
+
+## Выбор
 
 **Плагины → Голосовой ввод → Провайдер**:
 
-- `GigaAM v3 RNNT (локально)` — русский, быстро, лучшая точность на русском;
-- `Whisper large-v3-turbo q5_0 (локально)` — английский и смешанная речь;
-- `SenseVoiceSmall (INT8)` — штатный провайдер, русского не знает.
+- `Whisper large-v3-turbo (NPU)` — качественное распознавание, включая
+  английские названия; около 1,8–2,3 с на короткую фразу;
+- `Orukeet r3 (Vulkan)` — быстрый технический русский; около 0,2–0,3 с,
+  хорошо держит бренды вроде AMD/Steam/RX 580/Nvidia.
 
-GigaAM RNNT понимает только русский. Для английского или смешанной речи
-переключитесь на Whisper. Если переключаетесь с Whisper (`en`) на GigaAM,
-сначала выберите `ru`.
+Язык по умолчанию — `ru`; для английского можно выбрать `en` или `auto`.
 
-## Установка вручную (без магазина)
+## Приватность
 
-Рекомендуется путь через магазин. Для ручной установки:
+Оба сервера слушают только `127.0.0.1`. Аудио не покидает машину. Плагин не
+делает сетевых запросов, кроме этих двух локальных адресов.
 
-```powershell
-dsh plugin --profile web add nikimagic/dsh-local-stt
-```
+## Ограничения
 
-Для desktop-профиля, который управляется приложением, используйте установку
-через маркет или pnpm: CLI не даёт менять `desktop` напрямую.
-
-Либо добавьте корневой пакет в профиль через pnpm, пропишите
-`dsh-local-stt` в `dsh.profile.bundles` файла
-`~/.dsh/profiles/desktop/package.json` и перезапустите DSH. Пути по умолчанию
-уже указывают на каталоги, которые создаёт `setup.ps1`, поэтому YAML править
-не нужно.
-
-## Как это работает
-
-- `gigastt serve` слушает `127.0.0.1:9876`; официальный API отдаёт ему
-  канонический WAV 16 кГц, моно, PCM16 и получает
-  `{ text, audioSeconds, inferenceSeconds }`.
-- `whisper-server` слушает `127.0.0.1:8001` с тем же форматом результата.
-- Оба сервера слушают только loopback. Аудио не покидает машину.
-- `setup.ps1` заранее скачивает все модели, поэтому при распознавании сеть не
-  используется.
-
-## Структура репозитория
-
-```text
-index.js                      корневой бандл: оба провайдера одним плагином
-cordis.patch.yml              вставка корневого бандла в профиль
-packages/dsh-local-gigaam/    провайдер GigaAM (можно ставить отдельно)
-packages/dsh-local-whisper/   провайдер whisper.cpp (можно ставить отдельно)
-docs/index.json               индекс для Discover
-docs/icons/                   иконки магазина
-setup.ps1                     загрузчик движков и моделей с проверкой SHA-256
-```
-
-## Лицензии
-
-Наш код — MIT. Скачиваемые компоненты сохраняют свои лицензии:
-
-- [gigastt](https://github.com/ekhodzitsky/gigastt) — MIT;
-- [GigaAM](https://github.com/salute-developers/GigaAM) — MIT;
-- [whisper.cpp](https://github.com/ggml-org/whisper.cpp) — MIT;
-- веса Whisper — MIT (OpenAI);
-- [RuPunct ONNX](https://huggingface.co/ekhodzitsky/rupunct-small-onnx) —
-  см. карточку модели.
-
-Модели в репозитории не хранятся; `setup.ps1` скачивает их из официальных
-релизов.
+- Нужны запущенные FastFlowLM и/или audio.cpp; плагин их не поднимает.
+- FastFlowLM NPU в текущей конфигурации умеет Whisper, но не GigaAM.
+- Orukeet и Whisper могут по-разному записывать единицы и бренды; для
+  технических текстов проверяйте результат.
+- Это не TTS: плагин только распознаёт речь.

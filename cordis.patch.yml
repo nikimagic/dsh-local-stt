@@ -1,9 +1,14 @@
-# Корневой бандл dsh-local-stt.
-#
-# Одна запись в списке плагинов, внутри — GigaAM v3 и whisper.cpp.
-# Пути по умолчанию указывают на %USERPROFILE%\.dsh; setup.ps1 кладёт
-# движки и модели именно туда.
+- id: speech-to-text
+  config:
+    defaultProvider: whisper-npu
+    language: ru
 - insert:
     - id: speech-to-text-local
       name: dsh-local-stt
-      config: {}
+      config:
+        whisper:
+          baseUrl: http://127.0.0.1:52626
+          model: whisper-v3:turbo
+        orukeet:
+          baseUrl: http://127.0.0.1:8028
+          model: orukeet_q8_0

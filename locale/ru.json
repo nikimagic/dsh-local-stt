@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Локальный ASR: Whisper NPU + Orukeet Vulkan",
+    "description": "Whisper large-v3-turbo на NPU по умолчанию и Orukeet r3 на Radeon через Vulkan как альтернатива."
+  }
+}

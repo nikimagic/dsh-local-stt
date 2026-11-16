@@ -1,7 +1,7 @@
 {
   "name": "dsh-local-stt",
-  "version": "0.2.0",
-  "description": "Локальные GigaAM v3 и whisper.cpp одним плагином для штатного голосового ввода DSH",
+  "version": "0.3.0",
+  "description": "Локальный ASR для DSH: Whisper NPU по умолчанию и Orukeet Vulkan как альтернатива",
   "license": "MIT",
   "author": "NikiMagic",
   "homepage": "https://github.com/nikimagic/dsh-local-stt#readme",
@@ -14,14 +14,17 @@
   "exports": {
     ".": "./index.js",
     "./package.json": "./package.json",
-    "./cordis.patch.yml": "./cordis.patch.yml"
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.png"
   },
   "files": [
     "index.js",
     "cordis.patch.yml",
     "README.md",
     "LICENSE",
-    "packages/**/*"
+    "locale/*.json",
+    "icon.png"
   ],
   "engines": {
     "dsh": "^0.2.0-rc.1"
