@@ -6,6 +6,7 @@
     - id: speech-to-text-local
       name: dsh-local-stt
       config:
+        localRoot: C:\Users\admin\Documents\dsh-local-stt
         whisper:
           baseUrl: http://127.0.0.1:52626
           model: whisper-v3:turbo

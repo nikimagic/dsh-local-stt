@@ -318,10 +318,11 @@ class HttpSpeechProvider {
   constructor(ctx, options) {
     this.ctx = ctx
     this.options = options
-    this.model = options.model
+    this.modelSpec = options.modelSpec
     this.engine = options.engine
     this.enginesDir = options.enginesDir
     this.enginesBaseUrl = options.enginesBaseUrl
+    this.enginesLocalDir = options.enginesLocalDir || ''
     this.primaryName = options.primaryName
     this.primaryPath = options.modelPath
     this.modelsDir = dirname(options.modelPath)
@@ -333,9 +334,9 @@ class HttpSpeechProvider {
       languages: options.info.languages,
       downloadSources: [],
       setupEstimate: {
-        ...options.model.estimate,
+        ...options.modelSpec.estimate,
         recommendedDiskBytes:
-          options.model.estimate.recommendedDiskBytes + (options.engine?.size || 0) + 20_000_000,
+          options.modelSpec.estimate.recommendedDiskBytes + (options.engine?.size || 0) + 20_000_000,
       },
     }
     this.info.downloadSources = this.downloadSources()
@@ -451,7 +452,7 @@ class HttpSpeechProvider {
   /** Источники моделей: Hugging Face и, если файлы есть, локальная папка с исходниками. */
   downloadSources() {
     const sources = [HUGGINGFACE]
-    if (localSourceReady(this.model, this.localSource)) {
+    if (localSourceReady(this.modelSpec, this.localSource)) {
       sources.push(pathToFileURL(this.localSource).href)
     }
     return sources
@@ -464,7 +465,7 @@ class HttpSpeechProvider {
 
   /** Недостающие файлы модели. */
   missingFiles() {
-    return missingFiles(this.model, (file) => this.targetFor(file))
+    return missingFiles(this.modelSpec, (file) => this.targetFor(file))
   }
 
   /** Пересчитать готовность движка и моделей и опубликовать её. */
@@ -852,7 +853,7 @@ class HttpSpeechProvider {
     try {
       this.publish(this.checking())
       const engineState = verifyEngine(this.engine, this.enginesDir)
-      const modelsState = await verifyModels(this.model, (file) => this.targetFor(file), { signal })
+      const modelsState = await verifyModels(this.modelSpec, (file) => this.targetFor(file), { signal })
 
       this.ctx.logger?.info?.(
         `dsh-local-stt: проверка ${this.options.label}: движок ${engineState.state}, ` +
@@ -882,6 +883,9 @@ class HttpSpeechProvider {
           engine: this.engine,
           enginesDir: this.enginesDir,
           baseUrl: this.enginesBaseUrl,
+          localArchive: this.enginesLocalDir
+            ? join(this.enginesLocalDir, this.engine.archive)
+            : undefined,
           signal,
           onProgress: (progress) => {
             if (!this.disposed) this.publish(this.downloading(progress))
@@ -896,7 +900,7 @@ class HttpSpeechProvider {
       }
       if (modelsMissing) {
         const result = await provisionModelFiles({
-          model: this.model,
+          model: this.modelSpec,
           targetFor: (file) => this.targetFor(file),
           localDir: this.localSource,
           source,
@@ -1077,7 +1081,7 @@ function createProvider(ctx, config, kind) {
   const shared = {
     ...config,
     kind,
-    model,
+    modelSpec: model,
     engine: ENGINES[kind],
     primaryName: kind === 'whisper' ? 'model.q4nx' : 'orukeet-q8_0.gguf',
   }
@@ -1111,14 +1115,18 @@ function createProvider(ctx, config, kind) {
 
 export function apply(ctx, rawConfig = {}) {
   const config = rawConfig && typeof rawConfig === 'object' ? rawConfig : {}
-  const localSource = String(config.localSource ?? process.env.DSH_LOCAL_STT_SOURCES ?? '').trim()
+  const localRoot = String(config.localRoot ?? process.env.DSH_LOCAL_STT_PROJECT ?? '').trim()
+  const localSource = String(
+    config.localSource ?? process.env.DSH_LOCAL_STT_SOURCES ?? (localRoot ? join(localRoot, 'engines') : ''),
+  ).trim()
   const engines = config.engines && typeof config.engines === 'object' ? config.engines : {}
   const enginesDir = String(engines.dir ?? ENGINES_DIR)
   const enginesBaseUrl = String(engines.baseUrl ?? '').trim()
+  const enginesLocalDir = String(engines.localDir ?? (localRoot ? join(localRoot, 'dist') : '')).trim()
   const whisperConfig = normalizeEndpoint(config.whisper, DEFAULT_WHISPER)
   const orukeetConfig = normalizeEndpoint(config.orukeet, DEFAULT_ORUKEET)
 
-  const shared = { localSource, enginesDir, enginesBaseUrl }
+  const shared = { localSource, enginesDir, enginesBaseUrl, enginesLocalDir }
   const whisper = createProvider(ctx, { ...whisperConfig, ...shared }, 'whisper')
   const orukeet = createProvider(ctx, { ...orukeetConfig, ...shared }, 'orukeet')
 
