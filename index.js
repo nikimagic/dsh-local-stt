@@ -6,9 +6,9 @@
  * сервер, если запускал его сам.
  */
 import { spawn } from 'node:child_process'
-import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
+import { closeSync, existsSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 
 export const name = 'dsh-local-stt'
 export const inject = ['speechToText']
@@ -155,6 +155,83 @@ function isAlive(pid) {
   }
 }
 
+function capturePowerShell(script, outputPath) {
+  return new Promise((resolvePromise) => {
+    let fd
+    try {
+      fd = openSync(outputPath, 'w')
+    } catch {
+      resolvePromise(false)
+      return
+    }
+    let settled = false
+    const finish = (ok) => {
+      if (settled) return
+      settled = true
+      try {
+        closeSync(fd)
+      } catch {
+        // Файл уже закрыт.
+      }
+      resolvePromise(ok)
+    }
+    let child
+    try {
+      child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
+        windowsHide: true,
+        stdio: ['ignore', fd, fd],
+      })
+    } catch {
+      finish(false)
+      return
+    }
+    const timer = setTimeout(() => {
+      try {
+        child.kill()
+      } catch {
+        // Процесс уже завершился.
+      }
+      finish(false)
+    }, 5_000)
+    child.on('exit', (code) => {
+      clearTimeout(timer)
+      finish(code === 0)
+    })
+    child.on('error', () => {
+      clearTimeout(timer)
+      finish(false)
+    })
+  })
+}
+
+async function processIdentity(pid, port) {
+  const output = join(tmpdir(), `dsh-local-stt-identity-${process.pid}-${pid}-${Date.now()}.json`)
+  const script = [
+    `$p = Get-CimInstance Win32_Process -Filter "ProcessId = ${Number(pid)}" -ErrorAction SilentlyContinue`,
+    `$c = Get-NetTCPConnection -LocalPort ${Number(port)} -State Listen -ErrorAction SilentlyContinue`,
+    `[pscustomobject]@{ path = $p.ExecutablePath; portPid = @($c)[0].OwningProcess } | ConvertTo-Json -Compress`,
+  ].join('; ')
+  const ok = await capturePowerShell(script, output)
+  try {
+    if (!ok) return null
+    const raw = readFileSync(output, 'utf8').trim()
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    return {
+      path: typeof parsed?.path === 'string' ? parsed.path : '',
+      portPid: Number(parsed?.portPid) || 0,
+    }
+  } catch {
+    return null
+  } finally {
+    try {
+      unlinkSync(output)
+    } catch {
+      // Файл уже удалён.
+    }
+  }
+}
+
 function killTree(pid) {
   return new Promise((resolve) => {
     if (!pid) return resolve(-1)
@@ -293,23 +370,35 @@ class HttpSpeechProvider {
       this.clearPid()
       return
     }
-
-    let alive = true
-    try {
-      process.kill(pid, 0)
-    } catch {
-      alive = false
+    if (!isAlive(pid)) {
+      this.clearPid()
+      return
     }
 
-    if (alive && (await this.probe())) {
-      await killTree(pid)
-      for (let attempt = 0; attempt < 12; attempt++) {
-        await new Promise((resolve) => setTimeout(resolve, 300))
-        if (!(await this.probe())) break
+    const identity = await processIdentity(pid, this.options.port)
+    if (!identity?.path) {
+      this.ctx.logger?.warn?.(`dsh-local-stt: не удалось проверить владельца PID ${pid}; файл оставлен`)
+      return
+    }
+
+    const expected = this.options.command ? resolve(this.options.command).toLowerCase() : ''
+    const actual = resolve(identity.path).toLowerCase()
+    if (expected && actual !== expected) {
+      this.ctx.logger?.warn?.(`dsh-local-stt: PID ${pid} принадлежит ${identity.path}, а не серверу; файл удалён`)
+      this.clearPid()
+      return
+    }
+
+    await killTree(pid)
+    for (let attempt = 0; attempt < 12; attempt++) {
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 300))
+      if (!isAlive(pid)) {
+        this.clearPid()
+        return
       }
     }
 
-    if (!alive || !(await this.probe())) this.clearPid()
+    this.ctx.logger?.warn?.(`dsh-local-stt: не удалось остановить старый сервер PID ${pid}; файл оставлен`)
   }
 
   preflight() {
