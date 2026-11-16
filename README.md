@@ -64,6 +64,10 @@ Orukeet:  <plugin>\engines\audio-cpp\models\Orukeet-GGUF\orukeet-q8_0.gguf
 `engines\audio-cpp\0.9.4\config\audio-vulkan.json`.
 Модель Whisper лежит в каталоге, на который указывает `FLM_MODEL_PATH`.
 
+Сборка полного комплекта движков и моделей описана в
+[docs/ENGINES.md](docs/ENGINES.md). В Git хранится только код: бинарники и
+модели занимают около 1,6 ГБ и в пакет не входят.
+
 ## Настройка
 
 ```yaml
