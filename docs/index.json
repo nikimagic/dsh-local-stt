@@ -15,12 +15,12 @@
       },
       "versions": [
         {
-          "version": "0.3.12",
-          "publishTimestamp": 1794844800,
+          "version": "0.3.13",
+          "publishTimestamp": 1794846243,
           "source": {
             "type": "git",
             "url": "https://github.com/nikimagic/dsh-local-stt",
-            "commit": "7ed9142"
+            "commit": "6c28748"
           },
           "engines": {
             "dsh": "^0.2.0-rc.1"
