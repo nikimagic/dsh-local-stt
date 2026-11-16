@@ -1,12 +1,12 @@
 {
   "format": 1,
-  "title": "NikiMagic вЂ” Р»РѕРєР°Р»СЊРЅРѕРµ СЂР°СЃРїРѕР·РЅР°РІР°РЅРёРµ",
-  "description": "Р›РѕРєР°Р»СЊРЅС‹Р№ ASR РґР»СЏ DSH: Whisper large-v3-turbo РЅР° NPU РїРѕ СѓРјРѕР»С‡Р°РЅРёСЋ Рё Orukeet r3 РЅР° Radeon С‡РµСЂРµР· Vulkan.",
+  "title": "NikiMagic — локальное распознавание",
+  "description": "Локальный ASR для DSH: Whisper large-v3-turbo на NPU по умолчанию и Orukeet r3 на Radeon через Vulkan.",
   "plugins": [
     {
       "name": "dsh-local-stt",
       "title": "Whisper NPU + Orukeet Vulkan",
-      "description": "РЇРґСЂРѕ Р»РѕРєР°Р»СЊРЅРѕРіРѕ РіРѕР»РѕСЃРѕРІРѕРіРѕ РІРІРѕРґР° DSH: Whisper large-v3-turbo РЅР° XDNA2 NPU РїРѕ СѓРјРѕР»С‡Р°РЅРёСЋ, Orukeet r3 РЅР° Radeon 880M С‡РµСЂРµР· Vulkan РєР°Рє Р°Р»СЊС‚РµСЂРЅР°С‚РёРІР°. РђСѓРґРёРѕ РЅРµ РїРѕРєРёРґР°РµС‚ РјР°С€РёРЅСѓ.",
+      "description": "Ядро локального голосового ввода DSH: Whisper large-v3-turbo на XDNA2 NPU по умолчанию, Orukeet r3 на Radeon 880M через Vulkan как альтернатива. Аудио не покидает машину.",
       "icon": "icons/local-stt.png",
       "author": "NikiMagic",
       "homepage": "https://github.com/nikimagic/dsh-local-stt#readme",
@@ -30,4 +30,3 @@
     }
   ]
 }
-
