@@ -6,7 +6,7 @@
  * сервер, если запускал его сам.
  */
 import { spawn } from 'node:child_process'
-import { closeSync, existsSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 
@@ -24,6 +24,7 @@ const DEFAULT_WHISPER = {
   cwd: `${ROOT}\\flm\\app`,
   env: { FLM_MODEL_PATH: `${ROOT}\\flm\\models` },
   modelPath: `${ROOT}\\flm\\models\\models\\Whisper-V3-Turbo-NPU2\\model.q4nx`,
+  logPath: `${ROOT}\\flm\\app\\plugin.log`,
   autoStart: true,
   startupTimeoutMs: 90_000,
 }
@@ -52,6 +53,7 @@ const DEFAULT_ORUKEET = {
     OMP_NUM_THREADS: '8',
   },
   modelPath: `${ROOT}\\tts_cpp\\models\\audio.cpp\\Orukeet-GGUF\\orukeet-q8_0.gguf`,
+  logPath: `${ROOT}\\tts_cpp\\logs\\audio-vulkan\\plugin-stdout.log`,
   autoStart: true,
   startupTimeoutMs: 120_000,
 }
@@ -93,6 +95,7 @@ function normalizeEndpoint(raw, fallback) {
   const rawEnv = value.env && typeof value.env === 'object' ? value.env : fallback.env ?? {}
   const env = Object.fromEntries(Object.entries(rawEnv).map(([key, item]) => [String(key), String(item)]))
   const modelPath = String(value.modelPath ?? fallback.modelPath ?? '').trim()
+  const logPath = String(value.logPath ?? fallback.logPath ?? '').trim()
   const autoStart = value.autoStart !== false
   const startupTimeoutMs = Number(value.startupTimeoutMs ?? fallback.startupTimeoutMs)
   if (!/^https?:\/\//.test(baseUrl)) throw new Error(`Некорректный baseUrl: ${baseUrl}`)
@@ -104,6 +107,11 @@ function normalizeEndpoint(raw, fallback) {
     parsed = new URL(baseUrl)
   } catch {
     throw new Error(`Некорректный baseUrl: ${baseUrl}`)
+  }
+  const allowRemote = value.allowRemote === true
+  const host = parsed.hostname.toLowerCase()
+  if (!allowRemote && !['127.0.0.1', 'localhost', '[::1]', '::1'].includes(host)) {
+    throw new Error(`baseUrl должен указывать на loopback (${host}); для внешнего адреса задайте allowRemote: true`)
   }
   const port = parsed.port || (parsed.protocol === 'https:' ? '443' : '80')
   return {
@@ -119,7 +127,9 @@ function normalizeEndpoint(raw, fallback) {
     cwd,
     env,
     modelPath,
+    logPath,
     autoStart,
+    allowRemote,
     startupTimeoutMs,
   }
 }
@@ -283,11 +293,13 @@ class HttpSpeechProvider {
     this.childExited = false
     this.disposed = false
     this.lifetime = new AbortController()
+    this.startAbort = new AbortController()
     this.queue = []
     this.active = null
     const profile = String(process.env.DSH_PROFILE || 'default').replace(/[^A-Za-z0-9._-]/g, '_')
     this.pidFile = join(tmpdir(), `dsh-local-stt-${profile}-${options.kind}.pid`)
     this.cleanupPromise = null
+    this.cleanupBlocked = ''
   }
 
   snapshot() {
@@ -350,6 +362,7 @@ class HttpSpeechProvider {
     try {
       const record = {
         pid,
+        ownerPid: process.pid,
         command: this.options.command || '',
         port: this.options.port,
         createdAt: identity.createdAt || '',
@@ -379,6 +392,7 @@ class HttpSpeechProvider {
   }
 
   async cleanupStale() {
+    this.cleanupBlocked = ''
     let record
     try {
       const raw = readFileSync(this.pidFile, 'utf8').trim()
@@ -397,9 +411,19 @@ class HttpSpeechProvider {
       return
     }
 
+    const ownerPid = Number(record?.ownerPid) || 0
+    if (ownerPid && ownerPid !== process.pid && isAlive(ownerPid)) {
+      if (!(await this.probe())) {
+        this.cleanupBlocked = `PID-файл принадлежит другому экземпляру DSH (PID ${ownerPid}), сервер не отвечает; новый сервер не запускаю`
+        this.ctx.logger?.warn?.(`dsh-local-stt: ${this.cleanupBlocked}`)
+      }
+      return
+    }
+
     const identity = await processIdentity(pid, this.options.port)
     if (!identity?.path) {
-      this.ctx.logger?.warn?.(`dsh-local-stt: не удалось проверить владельца PID ${pid}; файл оставлен`)
+      this.cleanupBlocked = `Не удалось проверить владельца PID ${pid}; новый сервер не запускаю`
+      this.ctx.logger?.warn?.(`dsh-local-stt: ${this.cleanupBlocked}`)
       return
     }
 
@@ -421,16 +445,14 @@ class HttpSpeechProvider {
         return
       }
     } else if (identity.portPid !== pid) {
-      this.ctx.logger?.warn?.(
-        `dsh-local-stt: старый PID-файл без createdAt, порт ${this.options.port} не принадлежит PID ${pid}; процесс не тронут`,
-      )
+      this.cleanupBlocked = `Старый PID-файл без createdAt, порт ${this.options.port} не принадлежит PID ${pid}; новый сервер не запускаю`
+      this.ctx.logger?.warn?.(`dsh-local-stt: ${this.cleanupBlocked}`)
       return
     }
 
     if (identity.portPid && identity.portPid !== pid) {
-      this.ctx.logger?.warn?.(
-        `dsh-local-stt: порт ${this.options.port} принадлежит PID ${identity.portPid}, а PID-файл указывает на ${pid}; процесс не тронут`,
-      )
+      this.cleanupBlocked = `Порт ${this.options.port} принадлежит PID ${identity.portPid}, а PID-файл указывает на ${pid}; новый сервер не запускаю`
+      this.ctx.logger?.warn?.(`dsh-local-stt: ${this.cleanupBlocked}`)
       return
     }
 
@@ -438,6 +460,7 @@ class HttpSpeechProvider {
     for (let attempt = 0; attempt < 12; attempt++) {
       await new Promise((resolvePromise) => setTimeout(resolvePromise, 300))
       if (!isAlive(pid)) {
+        this.cleanupBlocked = ''
         this.clearPid()
         return
       }
@@ -496,14 +519,41 @@ class HttpSpeechProvider {
     if (this.options.command) {
       if (!existsSync(this.options.command)) throw new Error(`Исполняемый файл не найден: ${this.options.command}`)
       const args = this.options.args.map((arg) => arg.replaceAll('{port}', this.options.port))
+      let logFd
+      if (this.options.logPath) {
+        try {
+          mkdirSync(dirname(this.options.logPath), { recursive: true })
+          logFd = openSync(this.options.logPath, 'a')
+        } catch (error) {
+          this.ctx.logger?.warn?.(`dsh-local-stt: не удалось открыть лог: ${error instanceof Error ? error.message : error}`)
+        }
+      }
       await new Promise((resolve, reject) => {
-        const child = spawn(this.options.command, args, {
-          cwd: this.options.cwd || undefined,
-          env: { ...process.env, ...this.options.env },
-          windowsHide: true,
-          stdio: 'ignore',
-        })
+        let closed = false
+        const closeLog = () => {
+          if (closed || !logFd) return
+          closed = true
+          try {
+            closeSync(logFd)
+          } catch {
+            // Файл уже закрыт.
+          }
+        }
+        let child
+        try {
+          child = spawn(this.options.command, args, {
+            cwd: this.options.cwd || undefined,
+            env: { ...process.env, ...this.options.env },
+            windowsHide: true,
+            stdio: logFd ? ['ignore', logFd, logFd] : 'ignore',
+          })
+        } catch (error) {
+          closeLog()
+          reject(error)
+          return
+        }
         child.once('spawn', () => {
+          closeLog()
           this.childExited = false
           this.ownedProcess = child
           this.writePid(child.pid)
@@ -515,7 +565,10 @@ class HttpSpeechProvider {
           child.unref()
           resolve()
         })
-        child.once('error', reject)
+        child.once('error', (error) => {
+          closeLog()
+          reject(error)
+        })
       })
       return
     }
@@ -541,6 +594,10 @@ class HttpSpeechProvider {
 
   async startServer(signal) {
     if (this.cleanupPromise) await this.cleanupPromise
+    if (this.cleanupBlocked) throw new Error(this.cleanupBlocked)
+    this.startAbort = new AbortController()
+    const startSignal = combineSignals([signal, this.startAbort.signal])
+    startSignal.throwIfAborted()
     if (await this.probe()) {
       this.publish(this.ready())
       return false
@@ -558,7 +615,7 @@ class HttpSpeechProvider {
       await this.launch()
       const deadline = Date.now() + this.options.startupTimeoutMs
       while (!this.disposed && Date.now() < deadline) {
-        signal.throwIfAborted()
+        startSignal.throwIfAborted()
         await new Promise((resolve) => setTimeout(resolve, 1_000))
         if (this.childExited) {
           throw new Error('сервер завершился сразу после запуска; смотрите plugin.log')
@@ -618,6 +675,10 @@ class HttpSpeechProvider {
 
   async prepare() {
     if (this.state.phase === 'ready' || this.ownedProcess) return
+    if (this.cleanupBlocked) {
+      this.publish(this.failure(this.cleanupBlocked))
+      return
+    }
     try {
       this.preflight()
       this.publish(this.standby())
@@ -627,6 +688,7 @@ class HttpSpeechProvider {
   }
 
   async cancel() {
+    this.startAbort.abort(new Error('Подготовка отменена'))
     if (!this.ownedProcess) return
     await this.stopOwned()
   }
@@ -731,6 +793,7 @@ class HttpSpeechProvider {
     if (this.disposed) return
     this.disposed = true
     this.lifetime.abort(new Error('disposed'))
+    this.startAbort.abort(new Error('disposed'))
     for (const entry of this.queue) {
       entry.cleanup?.()
       entry.reject(new Error('Провайдер остановлен'))

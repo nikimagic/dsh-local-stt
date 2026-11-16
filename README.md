@@ -80,8 +80,12 @@ Orukeet:  <root>\tts_cpp\models\audio.cpp\Orukeet-GGUF\orukeet-q8_0.gguf
 ```
 
 Можно переопределить `command`, `args`, `cwd`, `env`, `modelPath`,
-`requestTimeoutMs`, `startupTimeoutMs` и `autoStart`. Порт в `args` можно
-оставить как `{port}` — он подставится из `baseUrl`.
+`logPath`, `requestTimeoutMs`, `startupTimeoutMs`, `autoStart` и
+`allowRemote`. Порт в `args` можно оставить как `{port}` — он подставится
+из `baseUrl`.
+
+`baseUrl` по умолчанию обязан указывать на loopback. Для внешнего адреса
+нужно явно задать `allowRemote: true`; это осознанно отключает локальность.
 
 ## Ограничения
 
