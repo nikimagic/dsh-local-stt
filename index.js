@@ -332,6 +332,7 @@ class HttpSpeechProvider {
   }
 
   initialise() {
+    if (this.ownedProcess || this.state.phase === 'ready' || this.cleanupPromise) return
     try {
       this.preflight()
       this.publish(this.standby())
@@ -386,6 +387,12 @@ class HttpSpeechProvider {
     if (expected && actual !== expected) {
       this.ctx.logger?.warn?.(`dsh-local-stt: PID ${pid} принадлежит ${identity.path}, а не серверу; файл удалён`)
       this.clearPid()
+      return
+    }
+    if (identity.portPid && identity.portPid !== pid) {
+      this.ctx.logger?.warn?.(
+        `dsh-local-stt: порт ${this.options.port} принадлежит PID ${identity.portPid}, а PID-файл указывает на ${pid}; процесс не тронут`,
+      )
       return
     }
 
@@ -571,7 +578,13 @@ class HttpSpeechProvider {
   }
 
   async prepare() {
-    this.initialise()
+    if (this.state.phase === 'ready' || this.ownedProcess) return
+    try {
+      this.preflight()
+      this.publish(this.standby())
+    } catch (error) {
+      this.publish(this.failure(error instanceof Error ? error.message : String(error)))
+    }
   }
 
   async cancel() {
