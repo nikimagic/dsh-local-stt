@@ -208,8 +208,9 @@ async function processIdentity(pid, port) {
   const output = join(tmpdir(), `dsh-local-stt-identity-${process.pid}-${pid}-${Date.now()}.json`)
   const script = [
     `$p = Get-CimInstance Win32_Process -Filter "ProcessId = ${Number(pid)}" -ErrorAction SilentlyContinue`,
+    `$created = $null; if ($p) { $created = $p.CreationDate.ToUniversalTime().ToString('o') }`,
     `$c = Get-NetTCPConnection -LocalPort ${Number(port)} -State Listen -ErrorAction SilentlyContinue`,
-    `[pscustomobject]@{ path = $p.ExecutablePath; portPid = @($c)[0].OwningProcess } | ConvertTo-Json -Compress`,
+    `[pscustomobject]@{ path = $p.ExecutablePath; createdAt = $created; portPid = @($c)[0].OwningProcess } | ConvertTo-Json -Compress`,
   ].join('; ')
   const ok = await capturePowerShell(script, output)
   try {
@@ -219,6 +220,7 @@ async function processIdentity(pid, port) {
     const parsed = JSON.parse(raw)
     return {
       path: typeof parsed?.path === 'string' ? parsed.path : '',
+      createdAt: typeof parsed?.createdAt === 'string' ? parsed.createdAt : '',
       portPid: Number(parsed?.portPid) || 0,
     }
   } catch {
@@ -344,12 +346,28 @@ class HttpSpeechProvider {
     }
   }
 
-  writePid(pid) {
+  writePid(pid, identity = {}) {
     try {
-      writeFileSync(this.pidFile, String(pid), 'utf8')
+      const record = {
+        pid,
+        command: this.options.command || '',
+        port: this.options.port,
+        createdAt: identity.createdAt || '',
+      }
+      writeFileSync(this.pidFile, JSON.stringify(record), 'utf8')
     } catch (error) {
       this.ctx.logger?.warn?.(`dsh-local-stt: не удалось записать PID: ${error instanceof Error ? error.message : error}`)
     }
+  }
+
+  async recordProcessIdentity(pid, child) {
+    const identity = await processIdentity(pid, this.options.port)
+    if (!identity?.createdAt) return
+    if (this.ownedProcess !== child || !isAlive(pid)) return
+    const expected = this.options.command ? resolve(this.options.command).toLowerCase() : ''
+    const actual = identity.path ? resolve(identity.path).toLowerCase() : ''
+    if (expected && actual !== expected) return
+    this.writePid(pid, identity)
   }
 
   clearPid() {
@@ -361,12 +379,15 @@ class HttpSpeechProvider {
   }
 
   async cleanupStale() {
-    let pid = 0
+    let record
     try {
-      pid = Number(readFileSync(this.pidFile, 'utf8').trim())
+      const raw = readFileSync(this.pidFile, 'utf8').trim()
+      record = raw.startsWith('{') ? JSON.parse(raw) : { pid: Number(raw), createdAt: '' }
     } catch {
       return
     }
+
+    const pid = Number(record?.pid)
     if (!Number.isInteger(pid) || pid <= 0) {
       this.clearPid()
       return
@@ -389,6 +410,23 @@ class HttpSpeechProvider {
       this.clearPid()
       return
     }
+
+    const recordedCreatedAt = typeof record?.createdAt === 'string' ? record.createdAt : ''
+    if (recordedCreatedAt) {
+      if (!identity.createdAt || identity.createdAt !== recordedCreatedAt) {
+        this.ctx.logger?.warn?.(
+          `dsh-local-stt: PID ${pid} переиспользован другим экземпляром (createdAt не совпал); файл удалён`,
+        )
+        this.clearPid()
+        return
+      }
+    } else if (identity.portPid !== pid) {
+      this.ctx.logger?.warn?.(
+        `dsh-local-stt: старый PID-файл без createdAt, порт ${this.options.port} не принадлежит PID ${pid}; процесс не тронут`,
+      )
+      return
+    }
+
     if (identity.portPid && identity.portPid !== pid) {
       this.ctx.logger?.warn?.(
         `dsh-local-stt: порт ${this.options.port} принадлежит PID ${identity.portPid}, а PID-файл указывает на ${pid}; процесс не тронут`,
@@ -469,6 +507,7 @@ class HttpSpeechProvider {
           this.childExited = false
           this.ownedProcess = child
           this.writePid(child.pid)
+          void this.recordProcessIdentity(child.pid, child)
           child.once('exit', () => {
             this.childExited = true
             if (this.ownedProcess === child) this.ownedProcess = null

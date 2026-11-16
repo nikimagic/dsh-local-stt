@@ -1,6 +1,6 @@
 {
   "name": "dsh-local-stt",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "Локальный ASR для DSH: Whisper NPU по умолчанию и Orukeet Vulkan как альтернатива",
   "license": "MIT",
   "author": "NikiMagic",
