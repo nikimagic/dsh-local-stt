@@ -20,59 +20,65 @@ import {
   verifyModels,
 } from './lib/models.js'
 import { ENGINES, engineReady, provisionEngine, verifyEngine } from './lib/engines.js'
+import { migrateLegacyEngines, resolveEnginesDir } from './lib/paths.js'
 
 export const name = 'dsh-local-stt'
 export const inject = ['speechToText']
 
 const PACKAGE_DIR = dirname(fileURLToPath(import.meta.url))
-const ENGINES_DIR = String(process.env.DSH_LOCAL_STT_ENGINES || join(PACKAGE_DIR, 'engines')).replace(/[\\/]+$/, '')
-const FLM_DIR = join(ENGINES_DIR, 'fastflowlm', '1.0.13')
-const FLM_MODELS_DIR = join(ENGINES_DIR, 'fastflowlm')
-const AUDIO_DIR = join(ENGINES_DIR, 'audio-cpp', '0.9.4')
-const AUDIO_MODELS_DIR = join(ENGINES_DIR, 'audio-cpp', 'models')
 
-const DEFAULT_WHISPER = {
-  baseUrl: 'http://127.0.0.1:52626',
-  model: 'whisper-v3:turbo',
-  language: 'ru',
-  requestTimeoutMs: 120_000,
-  command: join(FLM_DIR, 'flm.exe'),
-  args: ['serve', '--asr', 'whisper-v3:turbo', '--host', '127.0.0.1', '--port', '{port}'],
-  cwd: FLM_DIR,
-  env: { FLM_MODEL_PATH: FLM_MODELS_DIR },
-  modelPath: join(FLM_MODELS_DIR, 'models', 'Whisper-V3-Turbo-NPU2', 'model.q4nx'),
-  logPath: join(FLM_DIR, 'plugin.log'),
-  autoStart: true,
-  startupTimeoutMs: 90_000,
+/** Пути по умолчанию считаются от каталога данных, а не от пакета. */
+function defaultWhisper(enginesDir) {
+  const flmDir = join(enginesDir, 'fastflowlm', '1.0.13')
+  const modelsDir = join(enginesDir, 'fastflowlm')
+  return {
+    baseUrl: 'http://127.0.0.1:52626',
+    model: 'whisper-v3:turbo',
+    language: 'ru',
+    requestTimeoutMs: 120_000,
+    command: join(flmDir, 'flm.exe'),
+    args: ['serve', '--asr', 'whisper-v3:turbo', '--host', '127.0.0.1', '--port', '{port}'],
+    cwd: flmDir,
+    env: { FLM_MODEL_PATH: modelsDir },
+    modelPath: join(modelsDir, 'models', 'Whisper-V3-Turbo-NPU2', 'model.q4nx'),
+    logPath: join(flmDir, 'plugin.log'),
+    autoStart: true,
+    startupTimeoutMs: 90_000,
+  }
 }
-const DEFAULT_ORUKEET = {
-  baseUrl: 'http://127.0.0.1:8028',
-  model: 'orukeet_q8_0',
-  language: 'ru',
-  requestTimeoutMs: 120_000,
-  command: join(AUDIO_DIR, 'audiocpp_server.exe'),
-  args: [
-    '--config',
-    join(AUDIO_DIR, 'config', 'audio-vulkan.json'),
-    '--host',
-    '127.0.0.1',
-    '--port',
-    '{port}',
-    '--no-ui',
-    '--log',
-    '--log-file',
-    join(AUDIO_DIR, 'plugin.log'),
-  ],
-  cwd: AUDIO_DIR,
-  env: {
-    TEMP: join(AUDIO_DIR, 'temp'),
-    TMP: join(AUDIO_DIR, 'temp'),
-    OMP_NUM_THREADS: '8',
-  },
-  modelPath: join(AUDIO_MODELS_DIR, 'Orukeet-GGUF', 'orukeet-q8_0.gguf'),
-  logPath: join(AUDIO_DIR, 'plugin-stdout.log'),
-  autoStart: true,
-  startupTimeoutMs: 120_000,
+
+function defaultOrukeet(enginesDir) {
+  const audioDir = join(enginesDir, 'audio-cpp', '0.9.4')
+  const modelsDir = join(enginesDir, 'audio-cpp', 'models')
+  return {
+    baseUrl: 'http://127.0.0.1:8028',
+    model: 'orukeet_q8_0',
+    language: 'ru',
+    requestTimeoutMs: 120_000,
+    command: join(audioDir, 'audiocpp_server.exe'),
+    args: [
+      '--config',
+      join(audioDir, 'config', 'audio-vulkan.json'),
+      '--host',
+      '127.0.0.1',
+      '--port',
+      '{port}',
+      '--no-ui',
+      '--log',
+      '--log-file',
+      join(audioDir, 'plugin.log'),
+    ],
+    cwd: audioDir,
+    env: {
+      TEMP: join(audioDir, 'temp'),
+      TMP: join(audioDir, 'temp'),
+      OMP_NUM_THREADS: '8',
+    },
+    modelPath: join(modelsDir, 'Orukeet-GGUF', 'orukeet-q8_0.gguf'),
+    logPath: join(audioDir, 'plugin-stdout.log'),
+    autoStart: true,
+    startupTimeoutMs: 120_000,
+  }
 }
 
 function combineSignals(signals) {
@@ -1120,11 +1126,18 @@ export function apply(ctx, rawConfig = {}) {
     config.localSource ?? process.env.DSH_LOCAL_STT_SOURCES ?? (localRoot ? join(localRoot, 'engines') : ''),
   ).trim()
   const engines = config.engines && typeof config.engines === 'object' ? config.engines : {}
-  const enginesDir = String(engines.dir ?? ENGINES_DIR)
+  const enginesDir = resolveEnginesDir({ configured: engines.dir })
   const enginesBaseUrl = String(engines.baseUrl ?? '').trim()
   const enginesLocalDir = String(engines.localDir ?? (localRoot ? join(localRoot, 'dist') : '')).trim()
-  const whisperConfig = normalizeEndpoint(config.whisper, DEFAULT_WHISPER)
-  const orukeetConfig = normalizeEndpoint(config.orukeet, DEFAULT_ORUKEET)
+
+  // Движки и модели живут вне пакета: обновление плагина их не задевает.
+  const migration = migrateLegacyEngines({ fromDir: join(PACKAGE_DIR, 'engines'), toDir: enginesDir })
+  if (migration.moved) {
+    ctx.logger?.info?.(`dsh-local-stt: движки и модели перенесены в ${enginesDir}`)
+  }
+
+  const whisperConfig = normalizeEndpoint(config.whisper, defaultWhisper(enginesDir))
+  const orukeetConfig = normalizeEndpoint(config.orukeet, defaultOrukeet(enginesDir))
 
   const shared = { localSource, enginesDir, enginesBaseUrl, enginesLocalDir }
   const whisper = createProvider(ctx, { ...whisperConfig, ...shared }, 'whisper')

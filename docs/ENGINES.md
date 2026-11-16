@@ -6,7 +6,7 @@
 Полный комплект раскладывается внутри установленного плагина:
 
 ```text
-<plugin>\engines\
+<DSH_HOME>\dsh-local-stt\engines\
   fastflowlm\
     1.0.13\
       flm.exe
@@ -143,7 +143,7 @@ DSH_LOCAL_STT_ENGINES=<путь к engines>
 ### Whisper — `FastFlowLM/Whisper-V3-Turbo-NPU2`
 
 Ревизия `594eecd2d80b20cbb04ef0099162335d1dd1899a`, кладётся в
-`<plugin>\engines\fastflowlm\models\Whisper-V3-Turbo-NPU2\`.
+`<DSH_HOME>\dsh-local-stt\engines\fastflowlm\models\Whisper-V3-Turbo-NPU2\`.
 
 | Файл | Размер, байт | SHA-256 |
 |---|---:|---|
@@ -156,7 +156,7 @@ DSH_LOCAL_STT_ENGINES=<путь к engines>
 
 Ревизия `7a103b33f04120535bdfe97b5f65b79d3c90d708`, путь в репозитории
 `Orukeet-GGUF/orukeet-q8_0.gguf`, кладётся в
-`<plugin>\engines\audio-cpp\models\Orukeet-GGUF\`.
+`<DSH_HOME>\dsh-local-stt\engines\audio-cpp\models\Orukeet-GGUF\`.
 
 | Файл | Размер, байт | SHA-256 |
 |---|---:|---|

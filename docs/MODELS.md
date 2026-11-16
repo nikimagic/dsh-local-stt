@@ -43,8 +43,8 @@
 Путь берётся из конфига провайдера: каталог `modelPath`. По умолчанию:
 
 ```text
-Whisper  <plugin>\engines\fastflowlm\models\Whisper-V3-Turbo-NPU2\
-Orukeet  <plugin>\engines\audio-cpp\models\Orukeet-GGUF\
+Whisper  <DSH_HOME>\dsh-local-stt\engines\fastflowlm\models\Whisper-V3-Turbo-NPU2\
+Orukeet  <DSH_HOME>\dsh-local-stt\engines\audio-cpp\models\Orukeet-GGUF\
 ```
 
 Если каталог плагина только для чтения, укажите в конфиге `modelPath` и
