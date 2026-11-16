@@ -100,3 +100,53 @@ test('неверный хеш удаляет .part и не оставляет ф
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+test('зависший сервер не блокирует загрузку: срабатывает таймаут заголовков', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-fetch-hang-'))
+  const good = await serve({ '/ok': 'ok' })
+  const hang = createServer(() => {
+    // намеренно не отвечаем
+  })
+  await new Promise((resolve) => hang.listen(0, '127.0.0.1', resolve))
+  const hangUrl = `http://127.0.0.1:${hang.address().port}/slow`
+  try {
+    const started = Date.now()
+    const bytes = await downloadFile({
+      urls: [hangUrl, `${good.base}/ok`],
+      target: join(dir, 'archive.zip'),
+      size: payload.length,
+      sha256: digest,
+      resource: 'archive.zip',
+      headersTimeoutMs: 200,
+    })
+    assert.equal(bytes, payload.length)
+    assert.ok(Date.now() - started < 5000, 'таймаут не сработал')
+    assert.deepEqual(good.requests, ['/ok'])
+  } finally {
+    await good.close()
+    await new Promise((resolve) => hang.close(resolve))
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('один зависший адрес даёт причину timeout', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-fetch-hang-one-'))
+  const hang = createServer(() => {})
+  await new Promise((resolve) => hang.listen(0, '127.0.0.1', resolve))
+  const url = `http://127.0.0.1:${hang.address().port}/slow`
+  try {
+    const error = await downloadFile({
+      urls: [url],
+      target: join(dir, 'archive.zip'),
+      size: payload.length,
+      sha256: digest,
+      resource: 'archive.zip',
+      headersTimeoutMs: 150,
+    }).catch((problem) => problem)
+    assert.ok(error instanceof AssetError)
+    assert.equal(error.reason, 'timeout')
+  } finally {
+    await new Promise((resolve) => hang.close(resolve))
+    rmSync(dir, { recursive: true, force: true })
+  }
+})

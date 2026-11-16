@@ -12,6 +12,8 @@ window.__ModuleLoader__.load({
     const h = React.createElement
     const PACKAGE = 'dsh-local-stt'
     const REPO = 'nikimagic/dsh-local-stt'
+    /** Только свои провайдеры: в каталоге могут быть чужие ASR-плагины. */
+    const PROVIDERS = new Set(['whisper-npu', 'orukeet-vulkan'])
 
     function phaseLabel(provider) {
       const phase = provider.preparation?.phase ?? 'ready'
@@ -110,7 +112,8 @@ window.__ModuleLoader__.load({
             if (!service) throw new Error('голосовой ввод не подключён')
             const result = await service.catalog()
             if (result && result.ok === false) throw result.error
-            return (result?.value ?? result)?.providers ?? []
+            const providers = (result?.value ?? result)?.providers ?? []
+            return providers.filter((provider) => PROVIDERS.has(provider.id))
           }
 
           const waitAssets = async () => {

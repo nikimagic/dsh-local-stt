@@ -166,3 +166,28 @@ test('без голосового ввода показывает ошибку',
   }
   assert.ok(store.some((value) => String(value).includes('голосовой ввод не подключён')))
 })
+
+test('чужие ASR-провайдеры не запускаются', async () => {
+  const calls = []
+  const speech = {
+    catalog: async () => ({
+      ok: true,
+      value: {
+        providers: [
+          { id: 'whisper-npu', preparation: { phase: 'standby' } },
+          { id: 'orukeet-vulkan', preparation: { phase: 'standby' } },
+          { id: 'someone-else', preparation: { phase: 'unprepared' } },
+        ],
+      },
+    }),
+    prepare: async (...args) => {
+      calls.push(args[0])
+      return { ok: true }
+    },
+  }
+  const { registrations } = build({ fetchImpl: releaseFetch('v0.3.15'), speech })
+  const Component = registrations[0].Component
+  Component({ subject: { pkg: { name: 'dsh-local-stt', version: '0.3.15' } } }).children[0].props.onClick()
+  for (let i = 0; i < 40 && calls.length < 2; i++) await new Promise((resolve) => setTimeout(resolve, 25))
+  assert.deepEqual(calls, ['whisper-npu', 'orukeet-vulkan'])
+})
