@@ -1,6 +1,7 @@
 node_modules/
 .pnpm-store/
 .plugin-market-cache/
+engines/
 *.tgz
 *.zip
 *.tar.gz
