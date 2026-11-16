@@ -138,16 +138,35 @@ function audioSeconds(audio) {
   try {
     const view = new DataView(audio.buffer, audio.byteOffset, audio.byteLength)
     if (
-      audio.byteLength >= 44 &&
+      audio.byteLength >= 12 &&
       view.getUint32(0, true) === 0x46464952 &&
-      view.getUint32(8, true) === 0x45564157 &&
-      view.getUint32(12, true) === 0x20746d66
+      view.getUint32(8, true) === 0x45564157
     ) {
-      const channels = view.getUint16(22, true) || 1
-      const sampleRate = view.getUint32(24, true) || 16_000
-      const bits = view.getUint16(34, true) || 16
-      const bytesPerSecond = sampleRate * channels * (bits / 8)
-      return Math.max(0, (audio.byteLength - 44) / bytesPerSecond)
+      let offset = 12
+      let channels = 0
+      let sampleRate = 0
+      let bits = 0
+      let dataSize = 0
+
+      while (offset + 8 <= audio.byteLength) {
+        const id = view.getUint32(offset, true)
+        const size = view.getUint32(offset + 4, true)
+        const body = offset + 8
+        if (id === 0x20746d66 && size >= 16 && body + 16 <= audio.byteLength) {
+          channels = view.getUint16(body + 2, true) || 0
+          sampleRate = view.getUint32(body + 4, true) || 0
+          bits = view.getUint16(body + 14, true) || 0
+        } else if (id === 0x61746164) {
+          dataSize = Math.min(size, Math.max(0, audio.byteLength - body))
+          break
+        }
+        offset = body + size + (size & 1)
+      }
+
+      if (channels > 0 && sampleRate > 0 && bits > 0 && dataSize > 0) {
+        const bytesPerSecond = sampleRate * channels * (bits / 8)
+        return dataSize / bytesPerSecond
+      }
     }
   } catch {
     // Ниже — запасной расчёт для канонического 16-кГц WAV.
@@ -291,6 +310,7 @@ class HttpSpeechProvider {
     this.starting = null
     this.ownedProcess = null
     this.childExited = false
+    this.childCreatedAt = ''
     this.disposed = false
     this.lifetime = new AbortController()
     this.startAbort = new AbortController()
@@ -360,6 +380,7 @@ class HttpSpeechProvider {
 
   writePid(pid, identity = {}) {
     try {
+      this.childCreatedAt = identity.createdAt || ''
       const record = {
         pid,
         ownerPid: process.pid,
@@ -380,10 +401,12 @@ class HttpSpeechProvider {
     const expected = this.options.command ? resolve(this.options.command).toLowerCase() : ''
     const actual = identity.path ? resolve(identity.path).toLowerCase() : ''
     if (expected && actual !== expected) return
+    this.childCreatedAt = identity.createdAt
     this.writePid(pid, identity)
   }
 
   clearPid() {
+    this.childCreatedAt = ''
     try {
       unlinkSync(this.pidFile)
     } catch {
@@ -593,15 +616,15 @@ class HttpSpeechProvider {
   }
 
   async startServer(signal) {
-    if (this.cleanupPromise) await this.cleanupPromise
-    if (this.cleanupBlocked) throw new Error(this.cleanupBlocked)
     this.startAbort = new AbortController()
     const startSignal = combineSignals([signal, this.startAbort.signal])
+    if (this.cleanupPromise) await this.cleanupPromise
     startSignal.throwIfAborted()
     if (await this.probe()) {
       this.publish(this.ready())
       return false
     }
+    if (this.cleanupBlocked) throw new Error(this.cleanupBlocked)
 
     if (!this.options.autoStart) throw new Error(`${this.options.label} не запущен`)
     this.preflight()
@@ -637,6 +660,10 @@ class HttpSpeechProvider {
     const child = this.ownedProcess
     this.ownedProcess = null
     if (!child?.pid) {
+      this.clearPid()
+      return
+    }
+    if (child.exitCode !== null) {
       this.clearPid()
       return
     }
