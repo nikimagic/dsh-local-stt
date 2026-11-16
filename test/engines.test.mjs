@@ -14,7 +14,9 @@ import { writeZip } from '../lib/zip.js'
 
 async function serveArchive(archivePath, name) {
   const body = readFileSync(archivePath)
+  const requests = []
   const server = createServer((request, response) => {
+    requests.push(request.url)
     if (request.url !== `/${name}`) {
       response.writeHead(404).end()
       return
@@ -24,7 +26,11 @@ async function serveArchive(archivePath, name) {
   })
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
   const { port } = server.address()
-  return { url: `http://127.0.0.1:${port}`, close: () => new Promise((resolve) => server.close(resolve)) }
+  return {
+    url: `http://127.0.0.1:${port}`,
+    requests,
+    close: () => new Promise((resolve) => server.close(resolve)),
+  }
 }
 
 async function buildArchive(dir, files) {
@@ -191,6 +197,39 @@ test('архив без исполняемого файла не занимае�
     assert.equal(error.reason, 'integrity')
     assert.equal(existsSync(join(enginesDir, engine.dir)), false, 'каталог версии не должен появиться')
     assert.equal(existsSync(join(enginesDir, '.cache', 'flm-staging')), false, 'staging не убран')
+  } finally {
+    await serverState.close?.()
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('официальный архив главнее нашего резерва', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-engine-official-'))
+  const serverState = {}
+  try {
+    const { archivePath, size, sha256 } = await buildArchive(dir, { 'flm.exe': 'official-binary' })
+    const server = await serveArchive(archivePath, 'official.zip')
+    serverState.close = server.close
+    const engine = {
+      id: 'flm',
+      label: 'FastFlowLM test',
+      archive: 'flm-test.zip',
+      size,
+      sha256,
+      dir: join('fastflowlm', '1.0.13'),
+      marker: 'flm.exe',
+      official: { url: `${server.url}/official.zip`, size, sha256 },
+    }
+    // Наш резервный адрес заведомо недоступен: если возьмётся официальный, установка пройдёт.
+    const enginesDir = join(dir, 'engines')
+    const result = await provisionEngine({
+      engine,
+      enginesDir,
+      baseUrl: 'http://127.0.0.1:1',
+    })
+    assert.equal(result.installed, true)
+    assert.equal(readFileSync(join(enginesDir, engine.dir, 'flm.exe'), 'utf8'), 'official-binary')
+    assert.deepEqual(server.requests, ['/official.zip'])
   } finally {
     await serverState.close?.()
     rmSync(dir, { recursive: true, force: true })
