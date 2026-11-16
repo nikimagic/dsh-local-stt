@@ -52,6 +52,11 @@ https://cdn.jsdelivr.net/gh/nikimagic/dsh-local-stt@main/docs/index.json
 (`localSource` / `DSH_LOCAL_STT_SOURCES`). Базовый адрес архивов движков
 переопределяется полем `engines.baseUrl`, каталог установки — `engines.dir`.
 
+Проверить целостность можно кнопкой **«Проверить обновления»** в панели
+ввода: она пересчитывает SHA-256 всех файлов движка и модели и докачивает
+повреждённое. То же делает кнопка «Скачать и подготовить» в карточке
+голосового ввода.
+
 Подробности: [docs/MODELS.md](docs/MODELS.md) и [docs/ENGINES.md](docs/ENGINES.md).
 
 FastFlowLM:

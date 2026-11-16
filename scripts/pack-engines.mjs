@@ -16,7 +16,7 @@ const DIST = join(ROOT, 'dist')
 
 /** Служебные каталоги и логи в архив не попадают. */
 const SKIP_DIRS = new Set(['.cache', 'temp'])
-const SKIP_FILES = /\.log$/i
+const SKIP_FILES = /\.log$|^\.installed\.json$/i
 
 function collect(dir, base, entries) {
   for (const item of readdirSync(dir, { withFileTypes: true })) {

@@ -1,6 +1,6 @@
 {
   "name": "dsh-local-stt",
-  "version": "0.3.11",
+  "version": "0.3.12",
   "description": "Локальный ASR для DSH: Whisper NPU по умолчанию и Orukeet Vulkan как альтернатива",
   "license": "MIT",
   "author": "NikiMagic",
@@ -13,6 +13,7 @@
   "main": "./index.js",
   "exports": {
     ".": "./index.js",
+    "./client": "./client.js",
     "./package.json": "./package.json",
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./locale/*.json": "./locale/*.json",
@@ -20,6 +21,7 @@
   },
   "files": [
     "index.js",
+    "client.js",
     "lib",
     "cordis.patch.yml",
     "README.md",
@@ -39,6 +41,13 @@
       "patch": "./cordis.patch.yml",
       "platforms": [
         "win32"
+      ]
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation"
       ]
     }
   }

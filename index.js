@@ -7,6 +7,7 @@
  */
 import { spawn } from 'node:child_process'
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
+import { promises as fsp } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -16,8 +17,9 @@ import {
   missingFiles,
   localSourceReady,
   provisionModels as provisionModelFiles,
+  verifyModels,
 } from './lib/models.js'
-import { ENGINES, engineReady, provisionEngine } from './lib/engines.js'
+import { ENGINES, engineReady, provisionEngine, verifyEngine } from './lib/engines.js'
 
 export const name = 'dsh-local-stt'
 export const inject = ['speechToText']
@@ -343,7 +345,6 @@ class HttpSpeechProvider {
       startedAt: Date.now(),
       steps: [{ kind: 'check', status: 'running', startedAt: Date.now() }],
     }
-    this.checking = null
     this.starting = null
     this.ownedProcess = null
     this.childExited = false
@@ -474,6 +475,15 @@ class HttpSpeechProvider {
       return
     }
     if (this.state.phase !== 'ready') this.publish(this.standby())
+  }
+
+  /** Проверка хешей движка и моделей перед скачиванием. */
+  checking() {
+    return {
+      phase: 'checking',
+      startedAt: Date.now(),
+      steps: [{ kind: 'verify', status: 'running', startedAt: Date.now() }],
+    }
   }
 
   /** Во время распаковки архива движка. */
@@ -826,22 +836,40 @@ class HttpSpeechProvider {
       return
     }
     this.info.downloadSources = this.downloadSources()
-    if (this.engineReady() && this.missingFiles().length === 0) {
-      if (this.state.phase !== 'ready' && this.state.phase !== 'standby') this.publish(this.standby())
-      return
-    }
     if (this.provision) return
     const source = typeof options?.downloadSource === 'string' ? options.downloadSource : undefined
     this.provision = this.runProvision(source)
   }
 
-  /** Скачать движок и модели: сначала архив движка, затем файлы модели. */
+  /**
+   * Проверить движок и модели по хешам и докачать недостающее.
+   * Вызывается кнопкой «Скачать и подготовить» и кнопкой «Проверить обновления».
+   */
   async runProvision(source) {
     const controller = new AbortController()
     this.provisionAbort = controller
     const signal = combineSignals([controller.signal, this.lifetime.signal])
     try {
-      if (!this.engineReady()) {
+      this.publish(this.checking())
+      const engineState = verifyEngine(this.engine, this.enginesDir)
+      const modelsState = await verifyModels(this.model, (file) => this.targetFor(file), { signal })
+
+      if (this.ctx.logger?.info) {
+        this.ctx.logger.info(
+          `dsh-local-stt: проверка ${this.options.label}: движок ${engineState.ok ? 'ок' : 'нет'}, ` +
+            `модели: нет ${modelsState.missing.length}, повреждено ${modelsState.broken.length}`,
+        )
+      }
+
+      if (engineState.ok && modelsState.missing.length === 0 && modelsState.broken.length === 0) {
+        this.publish(this.standby())
+        return
+      }
+
+      if (!engineState.ok) {
+        if (!engineState.missing) {
+          await fsp.rm(join(this.enginesDir, this.engine.dir), { recursive: true, force: true })
+        }
         const result = await provisionEngine({
           engine: this.engine,
           enginesDir: this.enginesDir,
@@ -877,7 +905,7 @@ class HttpSpeechProvider {
         this.publish(this.cancelledState())
       } else {
         this.ctx.logger?.warn?.(
-          `dsh-local-stt: модели не подготовлены: ${error instanceof Error ? error.message : error}`,
+          `dsh-local-stt: не подготовлено: ${error instanceof Error ? error.message : error}`,
         )
         this.publish(this.downloadFailure(error))
       }

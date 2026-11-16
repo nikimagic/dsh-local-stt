@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { AssetError } from '../lib/errors.js'
-import { engineReady, provisionEngine } from '../lib/engines.js'
+import { engineReady, provisionEngine, verifyEngine } from '../lib/engines.js'
 import { writeZip } from '../lib/zip.js'
 
 async function serveArchive(archivePath, name) {
@@ -120,6 +120,46 @@ test('недоступный архив даёт ошибку с понятно�
     assert.ok(error instanceof AssetError)
     assert.equal(error.reason, 'http')
     assert.equal(error.status, 404)
+  } finally {
+    await serverState.close?.()
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('проверка движка находит подменённый файл, а новую раскладку принимает', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-engine-verify-'))
+  const serverState = {}
+  try {
+    const { archivePath, size, sha256 } = await buildArchive(dir, {
+      'flm.exe': 'binary-stub',
+      'share/model.txt': 'runtime data',
+    })
+    const server = await serveArchive(archivePath, 'flm-test.zip')
+    serverState.close = server.close
+    const engine = {
+      id: 'flm',
+      label: 'FastFlowLM test',
+      archive: 'flm-test.zip',
+      size,
+      sha256,
+      dir: join('fastflowlm', '1.0.13'),
+      marker: 'flm.exe',
+    }
+    const enginesDir = join(dir, 'engines')
+    await provisionEngine({ engine, enginesDir, baseUrl: server.url })
+    assert.deepEqual(verifyEngine(engine, enginesDir).ok, true)
+
+    writeFileSync(join(enginesDir, engine.dir, 'share', 'model.txt'), 'tampered')
+    const broken = verifyEngine(engine, enginesDir)
+    assert.equal(broken.ok, false)
+    assert.deepEqual(broken.broken, ['share/model.txt'])
+
+    // Раскладка без манифеста принимается и запоминается.
+    rmSync(join(enginesDir, engine.dir, '.installed.json'), { force: true })
+    const adopted = verifyEngine(engine, enginesDir)
+    assert.equal(adopted.ok, true)
+    assert.equal(adopted.adopted, true)
+    assert.equal(existsSync(join(enginesDir, engine.dir, '.installed.json')), true)
   } finally {
     await serverState.close?.()
     rmSync(dir, { recursive: true, force: true })
