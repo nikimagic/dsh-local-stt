@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { createServer } from 'node:http'
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -119,6 +119,37 @@ test('частичный .part больше ожидаемого сбрасыв�
     assert.equal(bytes, payload.length)
   } finally {
     await site.close()
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('долгая передача тела не обрывается таймаутом заголовков', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-fetch-slowbody-'))
+  const body = Buffer.alloc(2048, 7)
+  const digest = createHash('sha256').update(body).digest('hex')
+  const server = createServer(async (request, response) => {
+    response.writeHead(200, { 'Content-Length': String(body.length) })
+    response.write(body.subarray(0, 256))
+    // тело продолжается заметно позже, чем таймаут заголовков
+    await new Promise((resolve) => setTimeout(resolve, 600))
+    response.end(body.subarray(256))
+  })
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const url = `http://127.0.0.1:${server.address().port}/slow-body`
+  try {
+    const target = join(dir, 'file.bin')
+    const bytes = await downloadFile({
+      urls: [url],
+      target,
+      size: body.length,
+      sha256: digest,
+      resource: 'file.bin',
+      headersTimeoutMs: 150,
+    })
+    assert.equal(bytes, body.length)
+    assert.deepEqual(readFileSync(target), body)
+  } finally {
+    await new Promise((resolve) => server.close(resolve))
     rmSync(dir, { recursive: true, force: true })
   }
 })

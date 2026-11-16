@@ -866,25 +866,32 @@ export class HttpSpeechProvider {
           `модели: нет ${modelsState.missing.length}, повреждено ${modelsState.broken.length}`,
       )
 
-      if (engineState.state === 'broken') {
+      // Повреждённым считаем только то, что не умеем починить сами: конфиг
+      // плагина дописывается, остальное — сигнал беды.
+      const normalized = (path) => String(path).replaceAll('\\', '/')
+      const repairable = new Set(this.engine?.config ? [normalized(this.engine.config.file)] : [])
+      const broken = engineState.state === 'broken' ? engineState.broken : []
+      const onlyRepairable = broken.length > 0 && broken.every((file) => repairable.has(normalized(file)))
+      if (broken.length > 0 && !onlyRepairable) {
         // Ничего не трогаем: повреждённый каталог остаётся на месте.
         this.publish(
           this.failure(
-            `${this.engine.label}: не сошлись файлы (${engineState.broken.slice(0, 3).join(', ') || 'неизвестно'}). ` +
+            `${this.engine.label}: не сошлись файлы (${broken.slice(0, 3).join(', ') || 'неизвестно'}). ` +
               `Каталог engines\\${this.engine.dir} не изменён — удалите его вручную, чтобы поставить заново.`,
           ),
         )
         return
       }
 
-      const engineMissing = engineState.state === 'missing'
+      // Движок может быть «ок» по манифесту, но неполным по обязательным файлам.
+      const engineIncomplete = !this.engineReady()
       const modelsMissing = modelsState.missing.length > 0 || modelsState.broken.length > 0
-      if (!engineMissing && !modelsMissing) {
+      if (!engineIncomplete && !modelsMissing) {
         this.publish(this.standby())
         return
       }
 
-      if (engineMissing) {
+      if (engineIncomplete) {
         const installed = await provisionEngine({
           engine: this.engine,
           enginesDir: this.enginesDir,
