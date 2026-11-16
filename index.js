@@ -867,13 +867,13 @@ class HttpSpeechProvider {
       }
 
       if (!engineState.ok) {
-        if (!engineState.missing) {
-          await fsp.rm(join(this.enginesDir, this.engine.dir), { recursive: true, force: true })
-        }
+        // Замена идёт через промежуточный каталог: старый движок живёт до тех
+        // пор, пока новый архив не скачан, не распакован и не проверен.
         const result = await provisionEngine({
           engine: this.engine,
           enginesDir: this.enginesDir,
           baseUrl: this.enginesBaseUrl,
+          force: !engineState.ok,
           signal,
           onProgress: (progress) => {
             if (!this.disposed) this.publish(this.downloading(progress))
