@@ -93,7 +93,8 @@ window.__ModuleLoader__.load({
               if (!service) throw new Error('голосовой ввод не подключён')
               const providers = await readCatalog()
               for (const provider of providers) {
-                const result = await service.prepare(provider.id)
+                // Второй аргумент — options; ремоут требует его явно.
+                const result = await service.prepare(provider.id, undefined)
                 if (result && result.ok === false) throw result.error
               }
               await wait()
@@ -107,44 +108,44 @@ window.__ModuleLoader__.load({
           if (!ours) return null
 
           return h(
-            'div',
-            { style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '4px 0 8px' } },
-            h(
-              'button',
-              {
-                type: 'button',
-                disabled: running,
-                title: 'Пересчитать SHA-256 движков и моделей и докачать недостающее',
-                onClick: () => {
-                  if (!running) void run()
-                },
-                style: {
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  padding: '5px 12px',
-                  borderRadius: 8,
-                  border: '1px solid var(--dsw-alias-border-secondary, rgba(127,127,127,.35))',
-                  background: 'transparent',
-                  color: 'inherit',
-                  font: 'inherit',
-                  cursor: running ? 'default' : 'pointer',
-                  opacity: running ? 0.7 : 1,
-                },
+            'button',
+            {
+              type: 'button',
+              disabled: running,
+              title: 'Пересчитать SHA-256 движков и моделей и докачать недостающее',
+              onClick: () => {
+                if (!running) void run()
               },
-              h('span', { 'aria-hidden': true }, running ? '⏳' : '⟳'),
-              h('span', null, text),
-            ),
-            h('span', { style: { opacity: 0.7, fontSize: 12 } }, 'Сверяет движок и модели по SHA-256'),
+              style: {
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '5px 12px',
+                borderRadius: 8,
+                border: '1px solid var(--dsw-alias-border-secondary, rgba(127,127,127,.35))',
+                background: 'transparent',
+                color: 'inherit',
+                font: 'inherit',
+                fontSize: 13,
+                cursor: running ? 'default' : 'pointer',
+                opacity: running ? 0.7 : 1,
+                whiteSpace: 'nowrap',
+              },
+            },
+            h('span', { 'aria-hidden': true }, running ? '⏳' : '⟳'),
+            h('span', null, text),
           )
         }
 
         try {
-          ctx.slots.inject('plugins.detail.section', () =>
-            ctx.slots.register({ name: 'plugins.detail.section', id: 'dsh-local-stt-check', order: 10 }, CheckUpdates),
+          ctx.slots.inject('plugins.detail.actions', () =>
+            ctx.slots.register(
+              { name: 'plugins.detail.actions', id: 'dsh-local-stt-check', order: 5 },
+              CheckUpdates,
+            ),
           )
         } catch (error) {
-          console.warn('dsh-local-stt: слот карточки плагина недоступен', error)
+          console.warn('dsh-local-stt: слот действий карточки плагина недоступен', error)
         }
       },
     }
