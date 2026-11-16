@@ -9,22 +9,29 @@ import { spawn } from 'node:child_process'
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 export const name = 'dsh-local-stt'
 export const inject = ['speechToText']
 
-const ROOT = String(process.env.DSH_LOCAL_STT_ROOT || 'C:\\Users\\admin\\Downloads\\dsh_voice').replace(/\\+$/, '')
+const PACKAGE_DIR = dirname(fileURLToPath(import.meta.url))
+const ENGINES_DIR = String(process.env.DSH_LOCAL_STT_ENGINES || join(PACKAGE_DIR, 'engines')).replace(/[\\/]+$/, '')
+const FLM_DIR = join(ENGINES_DIR, 'fastflowlm', '1.0.13')
+const FLM_MODELS_DIR = join(ENGINES_DIR, 'fastflowlm')
+const AUDIO_DIR = join(ENGINES_DIR, 'audio-cpp', '0.9.4')
+const AUDIO_MODELS_DIR = join(ENGINES_DIR, 'audio-cpp', 'models')
+
 const DEFAULT_WHISPER = {
   baseUrl: 'http://127.0.0.1:52626',
   model: 'whisper-v3:turbo',
   language: 'ru',
   requestTimeoutMs: 120_000,
-  command: `${ROOT}\\flm\\app\\flm.exe`,
+  command: join(FLM_DIR, 'flm.exe'),
   args: ['serve', '--asr', 'whisper-v3:turbo', '--host', '127.0.0.1', '--port', '{port}'],
-  cwd: `${ROOT}\\flm\\app`,
-  env: { FLM_MODEL_PATH: 'C:\\Users\\admin\\.dsh\\models\\local-stt\\flm' },
-  modelPath: 'C:\\Users\\admin\\.dsh\\models\\local-stt\\flm\\models\\Whisper-V3-Turbo-NPU2\\model.q4nx',
-  logPath: `${ROOT}\\flm\\app\\plugin.log`,
+  cwd: FLM_DIR,
+  env: { FLM_MODEL_PATH: FLM_MODELS_DIR },
+  modelPath: join(FLM_MODELS_DIR, 'models', 'Whisper-V3-Turbo-NPU2', 'model.q4nx'),
+  logPath: join(FLM_DIR, 'plugin.log'),
   autoStart: true,
   startupTimeoutMs: 90_000,
 }
@@ -33,10 +40,10 @@ const DEFAULT_ORUKEET = {
   model: 'orukeet_q8_0',
   language: 'ru',
   requestTimeoutMs: 120_000,
-  command: `${ROOT}\\tts_cpp\\bin\\audio.cpp\\audiocpp_server.exe`,
+  command: join(AUDIO_DIR, 'audiocpp_server.exe'),
   args: [
     '--config',
-    `${ROOT}\\tts_cpp\\config\\audio-vulkan.json`,
+    join(AUDIO_DIR, 'config', 'audio-vulkan.json'),
     '--host',
     '127.0.0.1',
     '--port',
@@ -44,16 +51,16 @@ const DEFAULT_ORUKEET = {
     '--no-ui',
     '--log',
     '--log-file',
-    `${ROOT}\\tts_cpp\\logs\\audio-vulkan\\plugin.log`,
+    join(AUDIO_DIR, 'plugin.log'),
   ],
-  cwd: `${ROOT}\\tts_cpp`,
+  cwd: AUDIO_DIR,
   env: {
-    TEMP: `${ROOT}\\tts_cpp\\temp`,
-    TMP: `${ROOT}\\tts_cpp\\temp`,
+    TEMP: join(AUDIO_DIR, 'temp'),
+    TMP: join(AUDIO_DIR, 'temp'),
     OMP_NUM_THREADS: '8',
   },
-  modelPath: 'C:\\Users\\admin\\.dsh\\models\\local-stt\\orukeet\\Orukeet-GGUF\\orukeet-q8_0.gguf',
-  logPath: `${ROOT}\\tts_cpp\\logs\\audio-vulkan\\plugin-stdout.log`,
+  modelPath: join(AUDIO_MODELS_DIR, 'Orukeet-GGUF', 'orukeet-q8_0.gguf'),
+  logPath: join(AUDIO_DIR, 'plugin-stdout.log'),
   autoStart: true,
   startupTimeoutMs: 120_000,
 }
@@ -543,6 +550,12 @@ class HttpSpeechProvider {
       if (!existsSync(this.options.command)) throw new Error(`Исполняемый файл не найден: ${this.options.command}`)
       const args = this.options.args.map((arg) => arg.replaceAll('{port}', this.options.port))
       let logFd
+      try {
+        if (this.options.env.TEMP) mkdirSync(this.options.env.TEMP, { recursive: true })
+        if (this.options.env.TMP) mkdirSync(this.options.env.TMP, { recursive: true })
+      } catch (error) {
+        this.ctx.logger?.warn?.(`dsh-local-stt: не удалось создать temp: ${error instanceof Error ? error.message : error}`)
+      }
       if (this.options.logPath) {
         try {
           mkdirSync(dirname(this.options.logPath), { recursive: true })

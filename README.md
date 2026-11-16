@@ -51,15 +51,17 @@ audiocpp_server.exe --config audio-vulkan.json --port 8028 --no-ui
 Пути по умолчанию:
 
 ```text
-FLM:      C:\Users\admin\.dsh\models\local-stt\flm\models\Whisper-V3-Turbo-NPU2\model.q4nx
-Orukeet:  C:\Users\admin\.dsh\models\local-stt\orukeet\Orukeet-GGUF\orukeet-q8_0.gguf
+FLM:      <plugin>\engines\fastflowlm\models\Whisper-V3-Turbo-NPU2\model.q4nx
+Orukeet:  <plugin>\engines\audio-cpp\models\Orukeet-GGUF\orukeet-q8_0.gguf
 ```
 
-Модели лежат в постоянном каталоге DSH, а не в `Downloads`. Путь к
-исполняемым файлам движков по-прежнему задаётся через
-`DSH_LOCAL_STT_ROOT` или `command`/`args`.
+`<plugin>` — каталог установленного плагина. Движки лежат в
+`<plugin>\engines\fastflowlm\1.0.13` и `<plugin>\engines\audio-cpp\0.9.4`.
+Путь к каталогу движков можно переопределить через
+`DSH_LOCAL_STT_ENGINES`.
 
-Модель Orukeet должна быть указана в `tts_cpp\config\audio-vulkan.json`.
+Модель Orukeet должна быть указана в
+`engines\audio-cpp\0.9.4\config\audio-vulkan.json`.
 Модель Whisper лежит в каталоге, на который указывает `FLM_MODEL_PATH`.
 
 ## Настройка
