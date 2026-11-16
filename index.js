@@ -145,6 +145,16 @@ function audioSeconds(audio) {
   return Math.max(0, (audio.byteLength - 44) / 32_000)
 }
 
+function isAlive(pid) {
+  if (!pid) return false
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
 function killTree(pid) {
   return new Promise((resolve) => {
     if (!pid) return resolve(-1)
@@ -196,7 +206,9 @@ class HttpSpeechProvider {
     this.lifetime = new AbortController()
     this.queue = []
     this.active = null
-    this.pidFile = join(tmpdir(), `dsh-local-stt-${options.kind}.pid`)
+    const profile = String(process.env.DSH_PROFILE || 'default').replace(/[^A-Za-z0-9._-]/g, '_')
+    this.pidFile = join(tmpdir(), `dsh-local-stt-${profile}-${options.kind}.pid`)
+    this.cleanupPromise = null
   }
 
   snapshot() {
@@ -246,7 +258,9 @@ class HttpSpeechProvider {
     try {
       this.preflight()
       this.publish(this.standby())
-      void this.cleanupStale()
+      this.cleanupPromise = this.cleanupStale().catch((error) => {
+        this.ctx.logger?.warn?.(`dsh-local-stt: cleanup failed: ${error instanceof Error ? error.message : error}`)
+      })
     } catch (error) {
       this.publish(this.failure(error instanceof Error ? error.message : String(error)))
     }
@@ -352,7 +366,6 @@ class HttpSpeechProvider {
         const child = spawn(this.options.command, args, {
           cwd: this.options.cwd || undefined,
           env: { ...process.env, ...this.options.env },
-          detached: true,
           windowsHide: true,
           stdio: 'ignore',
         })
@@ -379,7 +392,6 @@ class HttpSpeechProvider {
     await new Promise((resolve, reject) => {
       const child = spawn('cmd.exe', ['/d', '/s', '/c', commandLine], {
         cwd: dirname(this.options.launcher),
-        detached: true,
         windowsHide: true,
         stdio: 'ignore',
       })
@@ -393,6 +405,7 @@ class HttpSpeechProvider {
   }
 
   async startServer(signal) {
+    if (this.cleanupPromise) await this.cleanupPromise
     if (await this.probe()) {
       this.publish(this.ready())
       return false
@@ -440,7 +453,7 @@ class HttpSpeechProvider {
     let stopped = false
     for (let attempt = 0; attempt < 12; attempt++) {
       await new Promise((resolve) => setTimeout(resolve, 400))
-      if (!(await this.probe())) {
+      if (!isAlive(child.pid) && !(await this.probe())) {
         stopped = true
         break
       }
@@ -450,7 +463,7 @@ class HttpSpeechProvider {
       await killTree(child.pid)
       for (let attempt = 0; attempt < 5; attempt++) {
         await new Promise((resolve) => setTimeout(resolve, 400))
-        if (!(await this.probe())) {
+        if (!isAlive(child.pid) && !(await this.probe())) {
           stopped = true
           break
         }
