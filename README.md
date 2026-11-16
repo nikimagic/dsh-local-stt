@@ -134,6 +134,10 @@ Orukeet:  <plugin>\engines\audio-cpp\models\Orukeet-GGUF\orukeet-q8_0.gguf
 `baseUrl` по умолчанию обязан указывать на loopback. Для внешнего адреса
 нужно явно задать `allowRemote: true`; это осознанно отключает локальность.
 
+## Графика
+
+Иконка нарисована для проекта в стиле MagicControl; исходник и скрипт — [docs/ARTWORK.md](docs/ARTWORK.md).
+
 ## Ограничения
 
 - Первый запуск требует скачать около 1,6 ГБ моделей либо указать локальную

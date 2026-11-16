@@ -1,14 +1,52 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Локальное распознавание речи">
+  <title>dsh-local-stt — локальное распознавание речи</title>
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#0b3b8c"/>
-      <stop offset="0.55" stop-color="#1677ff"/>
-      <stop offset="1" stop-color="#17b3ff"/>
+    <linearGradient id="sign" x1="0.15" y1="0.15" x2="0.85" y2="0.85">
+      <stop offset="0" stop-color="#7C3AED"/>
+      <stop offset="0.5" stop-color="#3B82F6"/>
+      <stop offset="0.9" stop-color="#22D3EE"/>
     </linearGradient>
+    <linearGradient id="plate" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#171B33"/>
+      <stop offset="1" stop-color="#0B0B15"/>
+    </linearGradient>
+    <filter id="soft" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="18"/>
+    </filter>
+    <filter id="halo" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="42"/>
+    </filter>
   </defs>
-  <rect width="64" height="64" rx="16" fill="url(#bg)"/>
-  <g fill="none" stroke="#d8f2ff" stroke-width="3" stroke-linecap="round">
-    <path d="M12 36v-8M18 41V23M24 45V19M30 39V25M36 43V21M42 45V19M48 40V24M54 36v-8"/>
+
+  <rect width="512" height="512" rx="116" fill="url(#plate)"/>
+
+  <!-- свечение за знаком -->
+  <g filter="url(#halo)" opacity="0.55">
+    <rect x="221" y="116" width="70" height="166" rx="35" fill="#7C3AED"/>
+    <path d="M188 220a68 68 0 0 0 136 0" fill="none" stroke="#7C3AED" stroke-width="18"/>
   </g>
-  <text x="32" y="58" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="12" font-weight="700" fill="#ffffff">G + W</text>
+  <g filter="url(#halo)" opacity="0.16">
+    <circle cx="320" cy="320" r="90" fill="#22D3EE"/>
+  </g>
+
+  <!-- звуковые волны: три затухающие дуги с каждой стороны -->
+  <g fill="none" stroke="url(#sign)" stroke-linecap="round">
+    <path d="M144 158a120 120 0 0 0 0 100" stroke-width="14" opacity="0.82"/>
+    <path d="M166 132a148 148 0 0 0 0 152" stroke-width="11" opacity="0.55"/>
+    <path d="M188 106a176 176 0 0 0 0 204" stroke-width="8" opacity="0.32"/>
+    <path d="M368 158a120 120 0 0 1 0 100" stroke-width="14" opacity="0.82"/>
+    <path d="M346 132a148 148 0 0 1 0 152" stroke-width="11" opacity="0.55"/>
+    <path d="M324 106a176 176 0 0 1 0 204" stroke-width="8" opacity="0.32"/>
+  </g>
+
+  <!-- микрофон -->
+  <g fill="none" stroke="url(#sign)" stroke-linecap="round">
+    <rect x="221" y="116" width="70" height="166" rx="35" fill="url(#sign)" stroke="none"/>
+    <path d="M188 220a68 68 0 0 0 136 0" stroke-width="18"/>
+    <path d="M256 288v44" stroke-width="18"/>
+    <path d="M218 332h76" stroke-width="18"/>
+  </g>
+
+  <!-- блик на капсуле -->
+  <rect x="234" y="132" width="26" height="120" rx="13" fill="#ffffff" opacity="0.16"/>
 </svg>
