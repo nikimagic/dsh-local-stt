@@ -24,7 +24,8 @@
     "README.md",
     "LICENSE",
     "locale/*.json",
-    "icon.png"
+    "icon.png",
+    "docs"
   ],
   "engines": {
     "dsh": "^0.2.0-rc.1"
