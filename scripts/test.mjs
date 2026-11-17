@@ -27,12 +27,12 @@ for (const file of files) {
     encoding: 'utf8',
     env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
   })
-  const output = `${result.stdout ?? ''}${result.stderr ?? ''}`
+  const output = `${result.stdout ?? ''}${result.stderr ?? ''}${result.error ? `\n${result.error.message}` : ''}`
   const ok = (output.match(/✔/g) ?? []).length
   const bad = (output.match(/✖/g) ?? []).length
   passed += ok
   failed += bad
-  const status = result.status === 0 && bad === 0 ? 'ok  ' : 'FAIL'
+  const status = result.status === 0 && !result.error && !result.signal && bad === 0 ? 'ok  ' : 'FAIL'
   console.log(`${status} ${file.padEnd(30)} тестов ${String(ok).padStart(2)}, провалов ${bad}`)
   if (status === 'FAIL') {
     failures.push({ file, output })
@@ -47,4 +47,4 @@ if (failures.length > 0) {
 }
 
 console.log(`\nвсего тестов: ${passed}, провалов: ${failed}, файлов: ${files.length}`)
-process.exit(failed === 0 ? 0 : 1)
+process.exit(failed === 0 && failures.length === 0 ? 0 : 1)
