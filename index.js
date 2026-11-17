@@ -366,6 +366,12 @@ export class HttpSpeechProvider {
     this.pidFile = join(tmpdir(), `dsh-local-stt-${profile}-${options.kind}.pid`)
     this.cleanupPromise = null
     this.cleanupBlocked = ''
+    this.pidRecord = null
+    this.startupPromise = null
+    this.identityTasks = new Set()
+    this.stopPromise = null
+    this.disposePromise = null
+    this.cancelVersion = 0
   }
 
   snapshot() {
@@ -530,7 +536,9 @@ export class HttpSpeechProvider {
         port: this.options.port,
         createdAt: identity.createdAt || '',
       }
-      writeFileSync(this.pidFile, JSON.stringify(record), 'utf8')
+      const raw = JSON.stringify(record)
+      writeFileSync(this.pidFile, raw, 'utf8')
+      this.pidRecord = raw
     } catch (error) {
       this.ctx.logger?.warn?.(`dsh-local-stt: не удалось записать PID: ${error instanceof Error ? error.message : error}`)
     }
@@ -539,7 +547,8 @@ export class HttpSpeechProvider {
   async recordProcessIdentity(pid, child) {
     const identity = await processIdentity(pid, this.options.port)
     if (!identity?.createdAt) return
-    if (this.ownedProcess !== child || !isAlive(pid)) return
+    if (this.disposed || this.ownedProcess !== child || !isAlive(pid)) return
+    if (!this.pidRecord || this.readPid() !== this.pidRecord) return
     const expected = this.options.command ? resolve(this.options.command).toLowerCase() : ''
     const actual = identity.path ? resolve(identity.path).toLowerCase() : ''
     if (expected && actual !== expected) return
@@ -547,10 +556,24 @@ export class HttpSpeechProvider {
     this.writePid(pid, identity)
   }
 
-  clearPid() {
-    this.childCreatedAt = ''
+  readPid() {
+    try {
+      return readFileSync(this.pidFile, 'utf8')
+    } catch {
+      return null
+    }
+  }
+
+  clearPid(expected = this.pidRecord) {
+    // Удаляем только записанную нами или проверенную stale запись.
+    // За время await другой экземпляр мог заменить файл.
+    if (expected === null || this.readPid() !== expected) return
     try {
       unlinkSync(this.pidFile)
+      if (this.pidRecord === expected) {
+        this.pidRecord = null
+        this.childCreatedAt = ''
+      }
     } catch {
       // PID-файла уже нет.
     }
@@ -559,20 +582,22 @@ export class HttpSpeechProvider {
   async cleanupStale() {
     this.cleanupBlocked = ''
     let record
+    const raw = this.readPid()
+    if (raw === null) return
     try {
-      const raw = readFileSync(this.pidFile, 'utf8').trim()
-      record = raw.startsWith('{') ? JSON.parse(raw) : { pid: Number(raw), createdAt: '' }
+      const value = raw.trim()
+      record = value.startsWith('{') ? JSON.parse(value) : { pid: Number(value), createdAt: '' }
     } catch {
       return
     }
 
     const pid = Number(record?.pid)
     if (!Number.isInteger(pid) || pid <= 0) {
-      this.clearPid()
+      this.clearPid(raw)
       return
     }
     if (!isAlive(pid)) {
-      this.clearPid()
+      this.clearPid(raw)
       return
     }
 
@@ -596,7 +621,7 @@ export class HttpSpeechProvider {
     const actual = resolve(identity.path).toLowerCase()
     if (expected && actual !== expected) {
       this.ctx.logger?.warn?.(`dsh-local-stt: PID ${pid} принадлежит ${identity.path}, а не серверу; файл удалён`)
-      this.clearPid()
+      this.clearPid(raw)
       return
     }
 
@@ -606,7 +631,7 @@ export class HttpSpeechProvider {
         this.ctx.logger?.warn?.(
           `dsh-local-stt: PID ${pid} переиспользован другим экземпляром (createdAt не совпал); файл удалён`,
         )
-        this.clearPid()
+        this.clearPid(raw)
         return
       }
     } else if (identity.portPid !== pid) {
@@ -621,12 +646,13 @@ export class HttpSpeechProvider {
       return
     }
 
+    if (this.disposed || this.readPid() !== raw) return
     await killTree(pid)
     for (let attempt = 0; attempt < 12; attempt++) {
       await new Promise((resolvePromise) => setTimeout(resolvePromise, 300))
       if (!isAlive(pid)) {
         this.cleanupBlocked = ''
-        this.clearPid()
+        this.clearPid(raw)
         return
       }
     }
@@ -725,7 +751,10 @@ export class HttpSpeechProvider {
           this.childExited = false
           this.ownedProcess = child
           this.writePid(child.pid)
-          void this.recordProcessIdentity(child.pid, child)
+          const identityTask = this.recordProcessIdentity(child.pid, child)
+          this.identityTasks.add(identityTask)
+          const clearIdentity = () => this.identityTasks.delete(identityTask)
+          identityTask.then(clearIdentity, clearIdentity)
           child.once('exit', () => {
             this.childExited = true
             if (this.ownedProcess === child) this.ownedProcess = null
@@ -760,12 +789,27 @@ export class HttpSpeechProvider {
     })
   }
 
-  async startServer(signal) {
+  startServer(signal) {
+    if (this.startupPromise) return this.startupPromise
     this.startAbort = new AbortController()
-    const startSignal = combineSignals([signal, this.startAbort.signal])
+    const startSignal = combineSignals([signal, this.startAbort.signal, this.lifetime.signal])
+    const promise = this.runStartServer(startSignal)
+    this.startupPromise = promise
+    const clear = () => {
+      if (this.startupPromise === promise) this.startupPromise = null
+    }
+    promise.then(clear, clear)
+    return promise
+  }
+
+  async runStartServer(startSignal) {
+    startSignal.throwIfAborted()
+    if (this.disposed) throw new Error('Провайдер остановлен')
     if (this.cleanupPromise) await this.cleanupPromise
     startSignal.throwIfAborted()
-    if (await this.probe()) {
+    const running = await this.probe()
+    startSignal.throwIfAborted()
+    if (running) {
       this.publish(this.ready())
       return false
     }
@@ -777,14 +821,18 @@ export class HttpSpeechProvider {
 
     try {
       await this.launch()
+      startSignal.throwIfAborted()
       const deadline = Date.now() + this.options.startupTimeoutMs
       while (!this.disposed && Date.now() < deadline) {
         startSignal.throwIfAborted()
         await new Promise((resolve) => setTimeout(resolve, 1_000))
+        startSignal.throwIfAborted()
         if (this.childExited) {
           throw new Error('сервер завершился сразу после запуска; смотрите plugin.log')
         }
-        if (await this.probe()) {
+        const ready = await this.probe()
+        startSignal.throwIfAborted()
+        if (ready) {
           this.publish(this.ready())
           return true
         }
@@ -797,15 +845,27 @@ export class HttpSpeechProvider {
     }
   }
 
-  async stopOwned() {
+  stopOwned() {
+    if (this.stopPromise) return this.stopPromise
+    const promise = this.runStopOwned()
+    this.stopPromise = promise
+    const clear = () => {
+      if (this.stopPromise === promise) this.stopPromise = null
+    }
+    promise.then(clear, clear)
+    return promise
+  }
+
+  async runStopOwned() {
     const child = this.ownedProcess
+    const record = this.pidRecord
     this.ownedProcess = null
     if (!child?.pid) {
-      this.clearPid()
+      this.clearPid(record)
       return
     }
     if (child.exitCode !== null) {
-      this.clearPid()
+      this.clearPid(record)
       return
     }
 
@@ -831,7 +891,7 @@ export class HttpSpeechProvider {
     }
 
     if (stopped) {
-      this.clearPid()
+      this.clearPid(record)
       this.publish(this.standby())
       return
     }
@@ -959,6 +1019,7 @@ export class HttpSpeechProvider {
   }
 
   async cancel() {
+    this.cancelVersion++
     this.startAbort.abort(new Error('Подготовка отменена'))
     this.provisionAbort?.abort(new Error('Подготовка отменена'))
     if (this.provision) {
@@ -968,7 +1029,7 @@ export class HttpSpeechProvider {
         // Ошибка уже опубликована в состоянии подготовки.
       }
     }
-    if (!this.ownedProcess) return
+    if (this.startupPromise) await this.startupPromise.catch(() => {})
     await this.stopOwned()
   }
 
@@ -1012,8 +1073,11 @@ export class HttpSpeechProvider {
 
     entry.started = true
     this.active = entry
-    Promise.resolve()
-      .then(() => entry.task())
+    entry.completion = Promise.resolve()
+      .then(() => {
+        entry.signal.throwIfAborted()
+        return entry.task()
+      })
       .then(entry.resolve, entry.reject)
       .finally(() => {
         entry.cleanup?.()
@@ -1040,11 +1104,15 @@ export class HttpSpeechProvider {
     const combined = combineSignals([signal, this.lifetime.signal])
     combined.throwIfAborted()
     const language = String(input?.language || this.options.language || 'ru').trim()
+    const cancelVersion = this.cancelVersion
 
     return await this.enqueue(async () => {
+      if (cancelVersion !== this.cancelVersion) throw new Error('Подготовка отменена')
       let started = false
       try {
         started = await this.startServer(combined)
+        combined.throwIfAborted()
+        if (cancelVersion !== this.cancelVersion) throw new Error('Подготовка отменена')
         const form = new FormData()
         form.append('file', new Blob([input.audio], { type: 'audio/wav' }), 'audio.wav')
         form.append('model', this.options.model)
@@ -1056,7 +1124,9 @@ export class HttpSpeechProvider {
           body: form,
           signal: combineSignals([combined, timeoutSignal(this.options.requestTimeoutMs)]),
         })
+        combined.throwIfAborted()
         const body = await response.text()
+        combined.throwIfAborted()
         if (!response.ok) {
           throw new Error(`${this.options.label}: HTTP ${response.status}: ${body.slice(0, 400)}`)
         }
@@ -1081,8 +1151,12 @@ export class HttpSpeechProvider {
     }, combined)
   }
 
-  async dispose() {
-    if (this.disposed) return
+  dispose() {
+    if (!this.disposePromise) this.disposePromise = this.runDispose()
+    return this.disposePromise
+  }
+
+  async runDispose() {
     this.disposed = true
     this.lifetime.abort(new Error('disposed'))
     this.startAbort.abort(new Error('disposed'))
@@ -1099,6 +1173,12 @@ export class HttpSpeechProvider {
       entry.reject(new Error('Провайдер остановлен'))
     }
     this.queue = []
+    // Startup/active сами завершают stopOwned в catch/finally. Ожидаем их
+    // снаружи stopOwned, чтобы не получить циклическое ожидание.
+    if (this.cleanupPromise) await this.cleanupPromise
+    if (this.startupPromise) await this.startupPromise.catch(() => {})
+    if (this.active?.completion) await this.active.completion
+    await Promise.allSettled([...this.identityTasks])
     await this.stopOwned()
     this.listeners.clear()
   }
