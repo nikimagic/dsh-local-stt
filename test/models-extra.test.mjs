@@ -67,6 +67,7 @@ test('подготовка перекачивает только указанн�
       model,
       targetFor,
       localDir: join(dir, 'src'),
+      source: 'file:///explicit-local-fixture',
       files: [...state.missing, ...state.broken],
     })
     assert.equal(result.files, 1)
@@ -87,6 +88,7 @@ test('без указания файлов качается всё недост�
       model,
       targetFor: (file) => join(targetDir, file.name),
       localDir: join(dir, 'src'),
+      source: 'file:///explicit-local-fixture',
     })
     assert.equal(result.files, 2)
     assert.deepEqual(readFileSync(join(targetDir, 'm.bin')), PRIMARY)

@@ -7,7 +7,7 @@ import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync,
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { AssetError } from '../lib/errors.js'
 import { MODELS, fileSize, localSourceReady, missingFiles, provisionModels } from '../lib/models.js'
 
@@ -89,7 +89,7 @@ test('копия из локальной папки с исходниками: �
       model,
       targetFor: targetFor(dir),
       localDir: local,
-      source: undefined,
+      source: pathToFileURL(local).href,
     })
     assert.equal(result.files, model.files.length)
     assert.deepEqual(missingFiles(model, targetFor(dir)), [])

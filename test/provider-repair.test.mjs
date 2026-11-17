@@ -8,7 +8,9 @@ import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { test } from 'node:test'
+import { beforeEach, test } from 'node:test'
+
+beforeEach((t) => t.mock.method(globalThis, 'fetch', async () => { throw new Error('offline fixture') }))
 import { HttpSpeechProvider } from '../index.js'
 
 const sha = (buffer) => createHash('sha256').update(buffer).digest('hex')

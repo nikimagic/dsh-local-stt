@@ -72,15 +72,17 @@ test('официальный источник 404 — берётся резер�
 })
 
 test('локальный архив с неверным хешем отвергается и не ставится', async () => {
-  const { dir, path, size } = await archiveWith({ 'flm.exe': 'binary' })
+  const { dir, path, size, buffer } = await archiveWith({ 'flm.exe': 'binary' })
+  const site = await serve({ '/engine.zip': buffer })
   try {
     const engine = { ...engineOf({ size, sha256: '0'.repeat(64) }) }
     const enginesDir = join(dir, 'engines')
-    const error = await provisionEngine({ engine, enginesDir, localArchive: path }).catch((problem) => problem)
+    const error = await provisionEngine({ engine, enginesDir, localArchive: path, baseUrl: site.url }).catch((problem) => problem)
     assert.ok(error instanceof AssetError)
     assert.equal(error.reason, 'integrity')
     assert.equal(existsSync(join(enginesDir, engine.dir)), false)
   } finally {
+    await site.close()
     rmSync(dir, { recursive: true, force: true })
   }
 })

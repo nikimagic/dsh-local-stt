@@ -8,7 +8,11 @@ import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { test } from 'node:test'
+import { beforeEach, test } from 'node:test'
+
+// Крошечные фикстуры не являются реальными HF-моделями: сеть явно недоступна,
+// чтобы обычный prepare проверял автоматический переход к локальному резерву.
+beforeEach((t) => t.mock.method(globalThis, 'fetch', async () => { throw new Error('offline fixture') }))
 import { HttpSpeechProvider } from '../index.js'
 import { writeZip } from '../lib/zip.js'
 
