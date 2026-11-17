@@ -138,6 +138,30 @@ test('broken body after headers resumes persisted prefix on mirror with correct 
   })
 })
 
+test('416 Range deletes stale prefix and retries same source without Range', async () => {
+  const prefix = Math.floor(payload.length / 2)
+  const requests = []
+  await fixture((req, res) => {
+    requests.push({ url: req.url, range: req.headers.range })
+    if (req.headers.range) {
+      res.writeHead(416, { 'Content-Range': `bytes */${payload.length}` })
+      res.end()
+      return
+    }
+    res.writeHead(200, { 'Content-Length': payload.length })
+    res.end(payload)
+  }, async (options) => {
+    fs.writeFileSync(`${options.target}.part`, Buffer.alloc(prefix, 0x61))
+    assert.equal(await downloadFile(options), payload.length)
+    assert.deepEqual(requests, [
+      { url: '/first', range: `bytes=${prefix}-` },
+      { url: '/first', range: undefined },
+    ])
+    assert.deepEqual(fs.readFileSync(options.target), payload)
+    assert.equal(fs.existsSync(`${options.target}.part`), false)
+  })
+})
+
 test('incorrect Content-Range never appends and next mirror receives unchanged prefix', async () => {
   const prefix = 1000
   const requests = []
