@@ -16,7 +16,7 @@
       "versions": [
         {
           "version": "0.3.16",
-          "publishTimestamp": 1794930000,
+          "publishTimestamp": 1794922281,
           "source": {
             "type": "git",
             "url": "https://github.com/nikimagic/dsh-local-stt",
