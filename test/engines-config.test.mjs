@@ -103,3 +103,23 @@ test('установленный движок без конфига ремонт
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+test('provisionEngine перезаписывает испорченный конфиг', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-audio-corrupt-'))
+  try {
+    const engine = audioEngine(1, '0'.repeat(64))
+    const enginesDir = join(dir, 'engines')
+    const target = join(enginesDir, engine.dir)
+    mkdirSync(join(target, 'config'), { recursive: true })
+    writeFileSync(join(target, 'audiocpp_server.exe'), 'server')
+    writeFileSync(join(target, engine.config.file), 'не json')
+
+    const result = await provisionEngine({ engine, enginesDir, baseUrl: 'http://127.0.0.1:1', force: true })
+    assert.equal(result.repaired, true)
+    const config = JSON.parse(readFileSync(join(target, engine.config.file), 'utf8'))
+    assert.equal(config.port, 8028)
+    assert.equal((await verifyEngine(engine, enginesDir)).state, 'ok')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})

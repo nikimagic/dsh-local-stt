@@ -883,8 +883,8 @@ export class HttpSpeechProvider {
         return
       }
 
-      // Движок может быть «ок» по манифесту, но неполным по обязательным файлам.
-      const engineIncomplete = !this.engineReady()
+      // Движок неполон по обязательным файлам или в нём повреждён наш конфиг.
+      const engineIncomplete = !this.engineReady() || broken.length > 0
       const modelsMissing = modelsState.missing.length > 0 || modelsState.broken.length > 0
       if (!engineIncomplete && !modelsMissing) {
         this.publish(this.standby())
@@ -899,6 +899,7 @@ export class HttpSpeechProvider {
           localArchive: this.enginesLocalDir
             ? join(this.enginesLocalDir, this.engine.archive)
             : undefined,
+          force: broken.length > 0,
           signal,
           onProgress: (progress) => {
             if (!this.disposed) this.publish(this.downloading(progress))
@@ -909,6 +910,15 @@ export class HttpSpeechProvider {
         })
         if (installed.installed) {
           this.ctx.logger?.info?.(`dsh-local-stt: движок ${this.engine.label} установлен в ${this.engine.dir}`)
+        } else if (installed.repaired) {
+          this.ctx.logger?.info?.(`dsh-local-stt: движок ${this.engine.label} отремонтирован`)
+        }
+        // После ремонта проверяем ещё раз: остаточные расхождения — ошибка.
+        const after = await verifyEngine(this.engine, this.enginesDir)
+        if (after.state === 'broken' || !this.engineReady()) {
+          throw new Error(
+            `${this.engine.label}: после подготовки остались повреждённые файлы`,
+          )
         }
       }
       if (modelsMissing) {

@@ -155,3 +155,37 @@ test('испорченный бинарник по-прежнему не рем�
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+test('повреждённый конфиг перезаписывается при подготовке', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-repair-corrupt-'))
+  try {
+    const target = installEngineWithoutConfig(dir)
+    const configPath = join(target, CONFIG_FILE)
+    mkdirSync(dirname(configPath), { recursive: true })
+    const good = JSON.stringify({ port: 8028, backend: 'vulkan' })
+    writeFileSync(configPath, good)
+    const manifestPath = join(target, '.installed.json')
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+    manifest.files.push({
+      path: 'config/audio-vulkan.json',
+      size: Buffer.byteLength(good),
+      sha256: sha(Buffer.from(good)),
+    })
+    writeFileSync(manifestPath, JSON.stringify(manifest))
+
+    // портим содержимое, размер оставляем прежним — проверка обязана увидеть хеш
+    writeFileSync(configPath, 'x'.repeat(Buffer.byteLength(good)))
+
+    const provider = makeProvider(dir)
+    await provider.prepare()
+    await provider.provision
+
+    assert.equal(provider.state.phase, 'standby')
+    const repaired = JSON.parse(readFileSync(configPath, 'utf8'))
+    assert.equal(repaired.port, 8028)
+    assert.equal(repaired.backend, 'vulkan')
+    assert.equal(repaired.models[0].task, 'asr')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
