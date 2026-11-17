@@ -33,7 +33,7 @@ window.__ModuleLoader__.load({
 
     function busy(provider) {
       const phase = provider.preparation?.phase
-      return phase === 'checking' || phase === 'downloading' || phase === 'loading'
+      return ['checking', 'downloading', 'loading', 'waking', 'cancelling'].includes(phase)
     }
 
     function compareVersions(left, right) {
@@ -98,8 +98,9 @@ window.__ModuleLoader__.load({
           const [running, setRunning] = React.useState(false)
           const alive = React.useRef(true)
 
-          React.useEffect(() => () => {
-            alive.current = false
+          React.useEffect(() => {
+            alive.current = true
+            return () => { alive.current = false }
           }, [])
 
           const subject = props?.subject
@@ -113,7 +114,10 @@ window.__ModuleLoader__.load({
             const result = await service.catalog()
             if (result && result.ok === false) throw result.error
             const providers = (result?.value ?? result)?.providers ?? []
-            return providers.filter((provider) => PROVIDERS.has(provider.id))
+            const ours = providers.filter((provider) => PROVIDERS.has(provider.id))
+            const missing = [...PROVIDERS].filter((id) => !ours.some((provider) => provider.id === id))
+            if (missing.length) throw new Error(`провайдеры недоступны: ${missing.join(', ')}`)
+            return ours
           }
 
           const waitAssets = async () => {
@@ -124,7 +128,7 @@ window.__ModuleLoader__.load({
               setSummary(phaseLabel(active[0]))
               await new Promise((resolve) => setTimeout(resolve, 1000))
             }
-            return await readCatalog()
+            throw new Error(alive.current ? 'проверка не завершилась за 10 минут' : 'проверка прервана')
           }
 
           const orderOf = (pluginText) => (pluginText.startsWith('есть') ? 'Есть обновление' : 'Проверить обновления')
@@ -144,7 +148,11 @@ window.__ModuleLoader__.load({
               const settled = await waitAssets()
               const broken = settled.filter((provider) => provider.preparation?.phase === 'failed')
               const missing = settled.filter((provider) => provider.preparation?.phase === 'unprepared')
-              const assets = broken.length > 0 ? 'ошибка' : missing.length > 0 ? 'нужно скачать' : 'ок'
+              const cancelled = settled.some((provider) => provider.preparation?.phase === 'cancelled')
+              const ready = settled.every((provider) => ['ready', 'standby'].includes(provider.preparation?.phase))
+              const assets = broken.length > 0 ? 'ошибка'
+                : missing.length > 0 ? 'нужно скачать'
+                  : cancelled ? 'отменено' : ready ? 'ок' : 'проверка не завершена'
 
               const remote = await latestVersion()
               let pluginText
