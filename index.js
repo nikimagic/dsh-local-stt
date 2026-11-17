@@ -352,7 +352,6 @@ export class HttpSpeechProvider {
       startedAt: Date.now(),
       steps: [{ kind: 'check', status: 'running', startedAt: Date.now() }],
     }
-    this.starting = null
     this.ownedProcess = null
     this.childExited = false
     this.childCreatedAt = ''
@@ -482,6 +481,16 @@ export class HttpSpeechProvider {
       return
     }
     if (this.state.phase !== 'ready') this.publish(this.standby())
+  }
+
+  /** Состояние запуска сервера. `startedAt` обязателен для схемы клиента DSH. */
+  starting() {
+    return {
+      phase: 'checking',
+      startedAt: Date.now(),
+      message: `Запускаю ${this.options.label}…`,
+      steps: [{ kind: 'load', status: 'running', startedAt: Date.now() }],
+    }
   }
 
   /** Проверка хешей движка и моделей перед скачиванием. */
@@ -764,11 +773,7 @@ export class HttpSpeechProvider {
 
     if (!this.options.autoStart) throw new Error(`${this.options.label} не запущен`)
     this.preflight()
-    this.publish({
-      phase: 'checking',
-      message: `Запускаю ${this.options.label}…`,
-      steps: [{ kind: 'load', status: 'running', startedAt: Date.now() }],
-    })
+    this.publish(this.starting())
 
     try {
       await this.launch()

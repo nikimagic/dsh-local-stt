@@ -290,3 +290,25 @@ test('dispose останавливает провайдера', async () => {
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+test('состояние запуска содержит startedAt', async () => {
+  const dir = workDir('starting')
+  try {
+    const { engine } = await makeEngine(dir)
+    const modelSpec = makeModel(dir)
+    const provider = makeProvider(dir, {
+      modelSpec,
+      engine,
+      enginesDir: join(dir, 'engines'),
+      localSource: join(dir, 'src'),
+    })
+    const state = provider.starting()
+    assert.equal(state.phase, 'checking')
+    assert.equal(typeof state.startedAt, 'number')
+    assert.ok(state.startedAt > 0)
+    assert.match(state.message, /Запускаю/)
+    assert.equal(state.steps[0].kind, 'load')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
