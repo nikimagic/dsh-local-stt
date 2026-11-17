@@ -20,7 +20,7 @@
           "source": {
             "type": "git",
             "url": "https://github.com/nikimagic/dsh-local-stt",
-            "commit": "PENDING_RELEASE_COMMIT"
+            "commit": "5b28822"
           },
           "engines": {
             "dsh": "^0.2.0-rc.1"
